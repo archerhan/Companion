@@ -91,15 +91,15 @@ class ViewController: NSViewController {
         skView.addTrackingArea(newTrackingArea)
         self.petTrackingArea = newTrackingArea
         
-        #if DEBUG
-        debugLayer?.removeFromSuperlayer()
-        let newDebugLayer = CALayer()
-        newDebugLayer.frame = trackingRect
-        newDebugLayer.borderColor = NSColor.red.cgColor
-        newDebugLayer.borderWidth = 1.0
-        skView.layer?.addSublayer(newDebugLayer)
-        self.debugLayer = newDebugLayer
-        #endif
+//        #if DEBUG
+//        debugLayer?.removeFromSuperlayer()
+//        let newDebugLayer = CALayer()
+//        newDebugLayer.frame = trackingRect
+//        newDebugLayer.borderColor = NSColor.red.cgColor
+//        newDebugLayer.borderWidth = 1.0
+//        skView.layer?.addSublayer(newDebugLayer)
+//        self.debugLayer = newDebugLayer
+//        #endif
     }
     
     override func mouseEntered(with event: NSEvent) {
