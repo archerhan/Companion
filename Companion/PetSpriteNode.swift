@@ -1,10 +1,16 @@
-//
-//  PetSpriteNode.swift
-//  Companion
-//
-//  Created by it on 2025/12/6.
-//
+// PetSpriteNode.swift
 import SpriteKit
+
+enum PetState {
+    case walking
+    case idle
+    case sitting
+    case beingDragged
+    case eating
+    case angry
+    case falling
+    case sleeping
+}
 
 enum PetAnimation: String, CaseIterable {
     case walk
@@ -15,14 +21,39 @@ enum PetAnimation: String, CaseIterable {
     case angry
     case front
     
-    // 这个 key 用来在节点上管理动画动作，确保同一时间只有一种主动画在播放
     var animationKey: String {
-        return "cat_black_\(self.rawValue)"
+        return "\(self.rawValue)_animation"
     }
 }
 
 class PetSpriteNode: SKSpriteNode {
-    private var walkFrames: [SKTexture] = []
+    // 每个宠物自己的状态相关属性
+    var petState: PetState = .idle {
+        didSet {
+            handleStateChange(from: oldValue, to: petState)
+        }
+    }
+    
+    var timeUntilNextStateChange: TimeInterval = 0
+    var timeUntilHungry: TimeInterval = 30.0
+    var previousStateBeforeAction: PetState = .walking
+    var petHorizontalSpeed: CGFloat = 30.0
+    var petVelocity: CGPoint = .zero
+    
+    // 计时器
+    private var lastMouseDownTime: TimeInterval = 0
+    private var mouseDownCount: Int = 0
+    
+    // 常量定义
+    private let WALK_DURATION_RANGE: ClosedRange<TimeInterval> = 10...20
+    private let IDLE_DURATION_RANGE: ClosedRange<TimeInterval> = 3...8
+    private let SITTING_DURATION_RANGE: ClosedRange<TimeInterval> = 10...15
+    private let SLEEPING_DURATION_RANGE: ClosedRange<TimeInterval> = 30...60
+    private let HUNGER_CYCLE_RANGE: ClosedRange<TimeInterval> = 20...30
+    private let ANGRY_CLICK_THRESHOLD = 3
+    private let DOUBLE_CLICK_INTERVAL: TimeInterval = 0.3
+    
+    // 动画相关
     private var animations: [PetAnimation: [SKTexture]] = [:]
     private var currentAnimation: PetAnimation?
     
@@ -30,44 +61,248 @@ class PetSpriteNode: SKSpriteNode {
         let texture = SKTexture(imageNamed: name)
         super.init(texture: texture, color: .clear, size: texture.size())
         loadAllAnimations()
+        self.name = "desktopPet"
+        self.size = CGSize(width: 80, height: 80)
+        self.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        
+        // 初始化状态
+        playAnimation(.idle)
+        resetStateTimer()
+        resetHungerTimer()
     }
-
+    
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    /// 加载所有动画资源
     private func loadAllAnimations() {
-        // 确保你的纹理图集名为 "PetAnimations.atlas"
-        let petAtlas = SKTextureAtlas(named: "PetAnimations")
+        let petAtlas = SKTextureAtlas(named: "CatBlackAnimations")
         
-        // 遍历我们定义的所有动画类型
         for animationType in PetAnimation.allCases {
             var frames: [SKTexture] = []
-            let texturePrefix = "cat_black_\(animationType.rawValue)-" // 例如: "cat_black_walk-"
+            let texturePrefix = "cat_black_\(animationType.rawValue)-"
             
             let textureNames = petAtlas.textureNames.filter {
                 $0.starts(with: texturePrefix)
-            }.sorted() // 排序确保动画帧顺序正确
+            }.sorted()
             
             for textureName in textureNames {
                 frames.append(petAtlas.textureNamed(textureName))
             }
             
-            // 只有当找到了对应的帧时，才存入字典
             if !frames.isEmpty {
                 animations[animationType] = frames
-                print("成功加载动画: \(animationType.rawValue), 帧数: \(frames.count)")
-            } else {
-                print("警告: 未找到动画 '\(animationType.rawValue)' 的纹理资源，前缀为: \(texturePrefix)")
             }
         }
     }
-    // 让方法可以接受一个重复次数的参数
+    
+    // 每个宠物独立的状态更新
+    func update(deltaTime: TimeInterval) {
+        // --- 处理下落状态 ---
+        if petState == .falling {
+            // 应用重力
+            let gravity = CGVector(dx: 0, dy: -100)
+            petVelocity.y += CGFloat(gravity.dy) * CGFloat(deltaTime)
+            petVelocity.x = petHorizontalSpeed * 0.8
+            
+            var newPosition = position
+            newPosition.x += petVelocity.x * CGFloat(deltaTime)
+            newPosition.y += petVelocity.y * CGFloat(deltaTime)
+            
+            let petHalfWidth = size.width / 2
+            let petHalfHeight = size.height / 2
+            
+            // 边界检查
+            if newPosition.x - petHalfWidth <= 0 && petVelocity.x < 0 {
+                newPosition.x = petHalfWidth
+                petVelocity.x *= -0.5
+                petHorizontalSpeed *= -0.5
+            } else if newPosition.x + petHalfWidth >= parent?.frame.width ?? 800 && petVelocity.x > 0 {
+                newPosition.x = (parent?.frame.width ?? 800) - petHalfWidth
+                petVelocity.x *= -0.5
+                petHorizontalSpeed *= -0.5
+            }
+            
+            // 地面碰撞
+            let groundY: CGFloat = 0
+            if newPosition.y - petHalfHeight <= groundY && petVelocity.y < 0 {
+                newPosition.y = groundY + petHalfHeight
+                petState = previousStateBeforeAction
+                petVelocity = .zero
+            }
+            
+            position = newPosition
+            
+            // 更新方向
+            if petVelocity.x != 0 {
+                let shouldFaceRight = petVelocity.x > 0
+                xScale = abs(xScale) * (shouldFaceRight ? 1.0 : -1.0)
+            }
+            
+            return
+        }
+        
+        // --- 更新计时器 ---
+        if petState == .walking || petState == .idle || petState == .sitting {
+            timeUntilNextStateChange -= deltaTime
+            timeUntilHungry -= deltaTime
+            
+            // 检查是否饿了
+            if timeUntilHungry <= 0 {
+                previousStateBeforeAction = petState
+                petState = .eating
+                return
+            }
+            
+            // 检查是否需要切换状态
+            if timeUntilNextStateChange <= 0 {
+                if petState == .walking {
+                    petState = .idle
+                } else if petState == .idle {
+                    petState = .sitting
+                } else {
+                    petState = .walking
+                }
+                resetStateTimer()
+            }
+        }
+        
+        // 行走状态更新位置
+        if petState == .walking {
+            let petHalfWidth = size.width / 2
+            if (position.x - petHalfWidth <= 0 && petHorizontalSpeed < 0) ||
+               (position.x + petHalfWidth >= parent?.frame.width ?? 800 && petHorizontalSpeed > 0) {
+                petHorizontalSpeed *= -1
+                updateDirection()
+            }
+            position.x += petHorizontalSpeed * CGFloat(deltaTime)
+        }
+    }
+    
+    private func resetStateTimer() {
+        switch petState {
+        case .walking:
+            timeUntilNextStateChange = TimeInterval.random(in: WALK_DURATION_RANGE)
+        case .idle:
+            timeUntilNextStateChange = TimeInterval.random(in: IDLE_DURATION_RANGE)
+        case .sitting:
+            timeUntilNextStateChange = TimeInterval.random(in: SITTING_DURATION_RANGE)
+        case .sleeping:
+            timeUntilNextStateChange = TimeInterval.random(in: SLEEPING_DURATION_RANGE)
+        default:
+            timeUntilNextStateChange = .greatestFiniteMagnitude
+        }
+    }
+    
+    private func resetHungerTimer() {
+        timeUntilHungry = TimeInterval.random(in: HUNGER_CYCLE_RANGE)
+    }
+    
+    private func updateDirection() {
+        if petHorizontalSpeed > 0 {
+            xScale = abs(xScale)
+        } else {
+            xScale = -abs(xScale)
+        }
+    }
+    
+    private func handleStateChange(from oldState: PetState, to newState: PetState) {
+        guard oldState != newState else { return }
+        
+        switch newState {
+        case .walking:
+            playAnimation(.walk)
+            alpha = 1.0
+            
+        case .idle:
+            playAnimation(.idle)
+            alpha = 1.0
+            
+        case .sitting:
+            playAnimation(.front)
+            alpha = 1.0
+            
+        case .beingDragged:
+            playAnimation(.drag)
+            alpha = 0.8
+        
+        case .falling:
+            playAnimation(.drag)
+            alpha = 1.0
+        
+        case .sleeping:
+            playAnimation(.sleep)
+            alpha = 0.8
+            
+            let breatheIn = SKAction.fadeAlpha(to: 0.7, duration: 1.5)
+            let breatheOut = SKAction.fadeAlpha(to: 0.8, duration: 1.5)
+            let breathing = SKAction.repeatForever(SKAction.sequence([breatheIn, breatheOut]))
+            run(breathing, withKey: "breathing")
+            
+            let sleepDuration = TimeInterval.random(in: SLEEPING_DURATION_RANGE)
+            
+            run(SKAction.wait(forDuration: sleepDuration)) { [weak self] in
+                guard let self = self else { return }
+                if self.petState == .sleeping {
+                    self.removeAction(forKey: "breathing")
+                    self.handleAfterSleepingTransition()
+                }
+            }
+                
+        case .eating:
+            let repeatCount = 10
+            playAnimation(.eat, repeatsForever: false, repeatCount: repeatCount)
+            
+            let singleDuration = getAnimationDuration(for: .eat)
+            let totalDuration = singleDuration * TimeInterval(repeatCount)
+            
+            run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
+                guard let self = self else { return }
+                self.previousStateBeforeAction = self.petState
+                self.petState = .sleeping
+                self.resetHungerTimer()
+            }
+                
+        case .angry:
+            let repeatCount = 2
+            playAnimation(.angry, repeatsForever: false, repeatCount: repeatCount)
+            
+            let singleDuration = getAnimationDuration(for: .angry)
+            let totalDuration = singleDuration * TimeInterval(repeatCount)
+            
+            run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
+                guard let self = self else { return }
+                if self.petState == .angry {
+                    self.petState = self.previousStateBeforeAction
+                }
+            }
+        }
+    }
+    
+    private func handleAfterSleepingTransition() {
+        let nextStates: [PetState] = [.sitting, .walking, .idle]
+        let randomIndex = Int.random(in: 0..<nextStates.count)
+        let nextState = nextStates[randomIndex]
+        
+        petState = nextState
+        
+        switch nextState {
+        case .walking:
+            playAnimation(.walk)
+        case .idle:
+            playAnimation(.idle)
+        case .sitting:
+            playAnimation(.front)
+        default:
+            break
+        }
+        
+        resetStateTimer()
+    }
+    
     func playAnimation(_ type: PetAnimation, repeatsForever: Bool = true, timePerFrame: TimeInterval = 0.1, repeatCount: Int = 1) {
         guard currentAnimation != type else { return }
         guard let frames = animations[type], !frames.isEmpty else {
-            print("错误: 无法播放动画 \(type.rawValue)，因为没有找到对应的动画帧。")
             return
         }
         
@@ -81,13 +316,10 @@ class PetSpriteNode: SKSpriteNode {
             let repeatAction = SKAction.repeatForever(animationAction)
             self.run(repeatAction, withKey: type.animationKey)
         } else {
-            // --- 核心修改在这里 ---
-            // 如果 repeatCount > 1，就使用 repeat(action:count:)
             if repeatCount > 1 {
                 let repeatAction = SKAction.repeat(animationAction, count: repeatCount)
                 self.run(repeatAction, withKey: type.animationKey)
             } else {
-                // 否则，只播放一次
                 self.run(animationAction, withKey: type.animationKey)
             }
         }
@@ -95,19 +327,49 @@ class PetSpriteNode: SKSpriteNode {
         self.currentAnimation = type
     }
     
-    /// 根据动画类型和每帧时长，精确计算出动画的总时长
-    /// - Parameters:
-    ///   - type: 动画枚举类型
-    ///   - timePerFrame: 动画播放时设置的每帧时间，默认为 0.1
-    /// - Returns: 动画总时长
     func getAnimationDuration(for type: PetAnimation, timePerFrame: TimeInterval = 0.1) -> TimeInterval {
-        // 1. 获取该动画类型对应的所有帧
         guard let frames = animations[type] else {
-            print("警告: 无法计算 \(type.rawValue) 的时长，未找到动画帧。返回默认值 2.0。")
-            return 2.0 // 提供一个安全的默认值
+            return 2.0
+        }
+        return TimeInterval(frames.count) * timePerFrame
+    }
+    
+    // 处理点击事件
+    func handleMouseDown(at location: CGPoint, event: NSEvent) -> Bool {
+        // 检查是否点击在宠物身上
+        guard self.contains(location) else { return false }
+        
+        // 特殊状态不能交互
+        let nonInteractiveStates: [PetState] = [.falling, .sleeping, .eating, .angry]
+        if nonInteractiveStates.contains(petState) {
+            return true // 点击到了，但不能交互
         }
         
-        // 2. 核心计算：帧数 * 每帧时间
-        return TimeInterval(frames.count) * timePerFrame
+        // 快速点击检测
+        let currentTime = event.timestamp
+        if currentTime - lastMouseDownTime < DOUBLE_CLICK_INTERVAL {
+            mouseDownCount += 1
+        } else {
+            mouseDownCount = 1
+        }
+        lastMouseDownTime = currentTime
+        
+        // 如果达到生气阈值
+        let dailyStates: [PetState] = [.walking, .idle, .sitting]
+        if mouseDownCount >= ANGRY_CLICK_THRESHOLD && dailyStates.contains(petState) {
+            mouseDownCount = 0
+            previousStateBeforeAction = petState
+            petState = .angry
+            return true
+        }
+        
+        // 开始拖拽
+        if dailyStates.contains(petState) {
+            previousStateBeforeAction = petState
+            petState = .beingDragged
+            return true
+        }
+        
+        return true
     }
 }
