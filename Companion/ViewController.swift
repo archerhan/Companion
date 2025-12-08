@@ -53,7 +53,7 @@ class ViewController: NSViewController {
         window.styleMask = .borderless
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.level = .floating
+        window.level = .statusBar
         window.setFrame(screen.frame, display: true, animate: false)
         window.acceptsMouseMovedEvents = true
         

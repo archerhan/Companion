@@ -13,6 +13,8 @@ enum PetState {
     case beingDragged
     case eating
     case angry
+    case falling
+    case sleeping
 }
 
 class PetScene: SKScene {
@@ -21,7 +23,7 @@ class PetScene: SKScene {
     private var pet: PetSpriteNode!
     private var dragOffset: CGPoint = .zero
     private var lastKnownPetFrame: CGRect?
-    private var petHorizontalSpeed: CGFloat = 100.0
+    private var petHorizontalSpeed: CGFloat = 30.0
     private var lastUpdateTime: TimeInterval = 0
     private var dragStartLocation: CGPoint?
     
@@ -49,9 +51,15 @@ class PetScene: SKScene {
     private let WALK_DURATION_RANGE: ClosedRange<TimeInterval> = 10...20 // 每次走路持续 10-20 秒
     private let IDLE_DURATION_RANGE: ClosedRange<TimeInterval> = 3...8    // 每次发呆持续 3-8 秒
     private let SITTING_DURATION_RANGE: ClosedRange<TimeInterval> = 10...15    // 每次坐着持续 10-15 秒
-    private let HUNGER_CYCLE_RANGE: ClosedRange<TimeInterval> = 40...100 // 每 2-5 分钟饿一次
+    private let SLEEPING_DURATION_RANGE: ClosedRange<TimeInterval> = 30...60    // 每次睡觉持续 30-60 秒
+    private let HUNGER_CYCLE_RANGE: ClosedRange<TimeInterval> = 120...300 // 每 2-5 分钟饿一次
     private let ANGRY_CLICK_THRESHOLD = 3 // 连续点击3次会生气
     private let DOUBLE_CLICK_INTERVAL: TimeInterval = 0.3 // 0.3秒内算连续点击
+    
+    // 添加必要的物理相关属性
+    private var gravity: CGVector = CGVector(dx: 0, dy: -100) // 重力加速度
+    private var petVelocity: CGPoint = .zero // 宠物速度
+    private var lastFallUpdateTime: TimeInterval = 0 // 用于下坠更新的计时器
     
     
     override func didMove(to view: SKView) {
@@ -62,8 +70,10 @@ class PetScene: SKScene {
         pet.size = CGSize(width: 80, height: 80)
         pet.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         
-        // 使用 self.size 来设置初始位置，确保与场景尺寸一致
-        pet.position = CGPoint(x: self.size.width / 2, y: 200)
+        let initialX = self.size.width / 2
+        let initialY = pet.size.height / 2
+        pet.position = CGPoint(x: initialX, y: initialY)
+        
         self.addChild(pet)
         
         pet.playAnimation(.idle)
@@ -88,6 +98,54 @@ class PetScene: SKScene {
         }
         let deltaTime = currentTime - lastUpdateTime
         lastUpdateTime = currentTime
+        
+        // --- 处理下落状态 ---
+        if currentState == .falling {
+            // 应用重力
+            petVelocity.y += CGFloat(gravity.dy) * CGFloat(deltaTime)
+            
+            // 应用水平速度（带一些阻力）
+            petVelocity.x = petHorizontalSpeed * 0.8 // 添加阻力
+            
+            // 更新位置
+            var newPosition = pet.position
+            newPosition.x += petVelocity.x * CGFloat(deltaTime)
+            newPosition.y += petVelocity.y * CGFloat(deltaTime)
+            
+            // 边界检查（防止宠物飞出屏幕）
+            let petHalfWidth = pet.size.width / 2
+            let petHalfHeight = pet.size.height / 2
+            
+            // 水平边界碰撞
+            if newPosition.x - petHalfWidth <= 0 && petVelocity.x < 0 {
+                newPosition.x = petHalfWidth
+                petVelocity.x *= -0.5 // 反弹并损失能量
+                petHorizontalSpeed *= -0.5
+            } else if newPosition.x + petHalfWidth >= self.size.width && petVelocity.x > 0 {
+                newPosition.x = self.size.width - petHalfWidth
+                petVelocity.x *= -0.5
+                petHorizontalSpeed *= -0.5
+            }
+            
+            // 地面碰撞检查
+            let groundY = 0.0 // 地面位置（在屏幕底部）
+            if newPosition.y - petHalfHeight <= groundY && petVelocity.y < 0 {
+                // 碰到地面了
+                newPosition.y = groundY + petHalfHeight
+                currentState = previousStateBeforeAction
+                petVelocity = .zero
+            }
+            
+            pet.position = newPosition
+            
+            // 更新方向（如果需要）
+            if petVelocity.x != 0 {
+                let shouldFaceRight = petVelocity.x > 0
+                pet.xScale = abs(pet.xScale) * (shouldFaceRight ? 1.0 : -1.0)
+            }
+            
+            return // 下落状态不执行其他状态的更新逻辑
+        }
         
         // --- 更新计时器 ---
         if currentState == .walking || currentState == .idle || currentState == .sitting {
@@ -126,7 +184,6 @@ class PetScene: SKScene {
         pet.position.x += petHorizontalSpeed * CGFloat(deltaTime)
     }
     
-    // --- 新增辅助方法 ---
     private func resetStateTimer() {
         switch currentState {
         case .walking:
@@ -137,17 +194,49 @@ class PetScene: SKScene {
             print("开始发呆，持续 \(String(format: "%.1f", timeUntilNextStateChange)) 秒")
         case .sitting:
             timeUntilNextStateChange = TimeInterval.random(in: SITTING_DURATION_RANGE)
-            print("开始发呆，持续 \(String(format: "%.1f", timeUntilNextStateChange)) 秒")
+            print("开始坐着，持续 \(String(format: "%.1f", timeUntilNextStateChange)) 秒")
+        case .sleeping:
+            timeUntilNextStateChange = TimeInterval.random(in: SLEEPING_DURATION_RANGE)
+            print("开始睡觉，持续 \(String(format: "%.1f", timeUntilNextStateChange)) 秒")
         default:
-            // 其他状态（如拖拽、吃饭）不参与这个自动切换循环
-            timeUntilNextStateChange = .greatestFiniteMagnitude // 设置一个极大值，防止意外切换
+            // 其他状态不参与这个自动切换循环
+            timeUntilNextStateChange = .greatestFiniteMagnitude
         }
     }
+
     
     private func resetHungerTimer() {
         timeUntilHungry = TimeInterval.random(in: HUNGER_CYCLE_RANGE)
         print("下一次吃饭在 \(String(format: "%.1f", timeUntilHungry)) 秒后")
     }
+    
+    private func handleAfterSleepingTransition() {
+        // 随机选择sleeping结束后的下一个状态
+        let nextStates: [PetState] = [.sitting, .walking, .idle]
+        let randomIndex = Int.random(in: 0..<nextStates.count)
+        let nextState = nextStates[randomIndex]
+        
+        currentState = nextState
+        
+        // 根据新状态设置动画
+        switch nextState {
+        case .walking:
+            pet.playAnimation(.walk)
+            print("睡醒后开始走路")
+        case .idle:
+            pet.playAnimation(.idle)
+            print("睡醒后开始发呆")
+        case .sitting:
+            pet.playAnimation(.front)
+            print("睡醒后开始坐着")
+        default:
+            break
+        }
+        
+        // 重置状态计时器
+        resetStateTimer()
+    }
+
     
     /// 核心的状态处理函数
     private func handleStateChange(from oldState: PetState, to newState: PetState) {
@@ -171,10 +260,39 @@ class PetScene: SKScene {
         case .beingDragged:
             pet.playAnimation(.drag)
             pet.alpha = 0.8
+        
+        case .falling:
+            // 使用拖拽的动画，或者你可以创建一个专门的 falling 动画
+            pet.playAnimation(.drag) // 或者创建 .falling
+            pet.alpha = 1.0
+        
+        case .sleeping:
+            pet.playAnimation(.sleep)
+            pet.alpha = 0.8
+            
+            // 睡觉时加上轻微的呼吸动画
+            let breatheIn = SKAction.fadeAlpha(to: 0.7, duration: 1.5)
+            let breatheOut = SKAction.fadeAlpha(to: 0.8, duration: 1.5)
+            let breathing = SKAction.repeatForever(SKAction.sequence([breatheIn, breatheOut]))
+            pet.run(breathing, withKey: "breathing")
+            
+            // 设置睡觉状态的持续时间
+            let sleepDuration = TimeInterval.random(in: SLEEPING_DURATION_RANGE)
+            print("开始睡觉，持续 \(String(format: "%.1f", sleepDuration)) 秒")
+            
+            run(SKAction.wait(forDuration: sleepDuration)) { [weak self] in
+                guard let self = self else { return }
+                
+                if self.currentState == .sleeping {
+                    // 停止呼吸动画
+                    self.pet.removeAction(forKey: "breathing")
+                    self.handleAfterSleepingTransition()
+                }
+            }
                 
         case .eating:
             // --- 定义重复次数 ---
-            let repeatCount = 3 // 让吃饭动画播放3次
+            let repeatCount = 10 // 让吃饭动画播放10次
             // 1. 播放动画时传入重复次数
             pet.playAnimation(.eat, repeatsForever: false, repeatCount: repeatCount)
             
@@ -184,7 +302,9 @@ class PetScene: SKScene {
             
             run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
                 guard let self = self else { return }
-                self.currentState = self.previousStateBeforeAction
+                // 吃完饭后就睡觉
+                self.previousStateBeforeAction = self.currentState // 保存当前状态（eating）
+                self.currentState = .sleeping
                 self.resetHungerTimer()
             }
                 
@@ -207,16 +327,32 @@ class PetScene: SKScene {
     
     private func updateMouseInteraction() {
         guard let window = self.view?.window, let skView = self.view else { return }
-        if currentState == .beingDragged {
+        
+        // 处理特殊状态
+        switch currentState {
+        case .beingDragged:
+            // 拖拽状态下需要鼠标交互
             window.ignoresMouseEvents = false
             NSCursor.pointingHand.set()
             return
+            
+        case .sleeping, .eating, .angry, .falling:
+            // 这些特殊状态下，窗口忽略鼠标事件（鼠标穿透）
+            window.ignoresMouseEvents = true
+            NSCursor.arrow.set()
+            return
+            
+        default:
+            // 常规状态（walking, idle, sitting）
+            break
         }
         
+        // 常规状态下的鼠标检测
         let mouseLocationInWindow = window.mouseLocationOutsideOfEventStream
         let mouseLocationInView = skView.convert(mouseLocationInWindow, from: nil)
         let mouseLocationInScene = self.convertPoint(fromView: mouseLocationInView)
         let isMouseOnPet = pet.frame.contains(mouseLocationInScene)
+        
         if isMouseOnPet {
             window.ignoresMouseEvents = false
             NSCursor.pointingHand.set()
@@ -253,6 +389,13 @@ class PetScene: SKScene {
         // 检查是否点击在宠物身上
         guard atPoint(locationInScene).name == "desktopPet" else { return }
         
+        // 如果在特殊状态中，不能开始新的拖拽
+        // 添加更多特殊状态到排除列表
+        let nonInteractiveStates: [PetState] = [.falling, .sleeping, .eating, .angry]
+        if nonInteractiveStates.contains(currentState) {
+            return
+        }
+        
         // --- 快速点击检测逻辑 ---
         let currentTime = event.timestamp
         if currentTime - lastMouseDownTime < DOUBLE_CLICK_INTERVAL {
@@ -262,66 +405,62 @@ class PetScene: SKScene {
         }
         lastMouseDownTime = currentTime
         
-        // 如果达到生气阈值，并且当前不是正在执行特殊动作（如吃饭、拖拽）
-        if mouseDownCount >= ANGRY_CLICK_THRESHOLD && (currentState == .walking || currentState == .idle) {
+        // 如果达到生气阈值，并且当前是日常状态
+        let dailyStates: [PetState] = [.walking, .idle, .sitting]
+        if mouseDownCount >= ANGRY_CLICK_THRESHOLD && dailyStates.contains(currentState) {
             mouseDownCount = 0 // 重置计数，防止下次单击就生气
             previousStateBeforeAction = currentState
             currentState = .angry
-            return // << --- 关键！进入生气状态后，立刻结束本次点击事件处理
+            return
         }
         
         // --- 正常的拖拽逻辑 ---
-        // 只有在非特殊动作状态下才能开始拖拽
-        if currentState != .eating && currentState != .angry {
+        // 只有在日常状态下才能开始拖拽
+        if dailyStates.contains(currentState) {
             dragOffset = CGPoint(x: locationInScene.x - pet.position.x, y: locationInScene.y - pet.position.y)
             dragStartLocation = locationInScene
-            
             previousStateBeforeAction = currentState
             self.currentState = .beingDragged
         }
     }
+
     
+    // 在 mouseUp 方法中修改拖拽结束的逻辑
     override func mouseUp(with event: NSEvent) {
-        if currentState == .beingDragged  {
-            // --- 状态机切换 ---
-            // 拖拽结束后，让它恢复到被拖拽前的状态
-            self.currentState = previousStateBeforeAction
-            
-            if let startLoc = dragStartLocation {
+        if currentState == .beingDragged {
+            // 记录松开时的速度（可以基于最后几次拖拽位置计算）
+            if let lastDragLocation = dragStartLocation {
                 let currentLoc = event.location(in: self)
-                let totalDragDistanceX = currentLoc.x - startLoc.x
+//                let dragDuration = event.timestamp - lastMouseDownTime
                 
-                // 设置一个更大的阈值，以区分真正的“拖拽”和“点击”
+                // 计算水平速度（保持原有逻辑）
+                let totalDragDistanceX = currentLoc.x - lastDragLocation.x
                 let dragThreshold: CGFloat = 10.0
                 
-                print("拖拽距离: \(totalDragDistanceX)")
-
                 if totalDragDistanceX > dragThreshold {
-                    // 明确向右拖拽
                     petHorizontalSpeed = abs(petHorizontalSpeed)
-                    print("判断为向右拖拽")
                 } else if totalDragDistanceX < -dragThreshold {
-                    // 明确向左拖拽
                     petHorizontalSpeed = -abs(petHorizontalSpeed)
-                    print("判断为向左拖拽")
                 }
-                // 如果拖拽距离很小 (在阈值内), 则不改变方向，视为点击或微小移动
                 
-                updatePetDirection() // 根据新的速度方向更新宠物朝向
+                // 设置垂直速度（模拟抛出效果）
+                // 这里使用一个基础的下落速度，你可以根据需要调整
+                petVelocity.y = -100 // 初始向上速度，然后受重力影响下落
+                
+                // 进入下落状态
+                currentState = .falling
             }
             
             // 重置追踪变量
             dragStartLocation = nil
             
-            // 动画代码
             let currentXScaleSign = pet.xScale.sign == .minus ? -1.0 : 1.0
             let scaleUp = SKAction.scaleX(to: 1.05 * currentXScaleSign, y: 1.05, duration: 0.1)
             let scaleDown = SKAction.scaleX(to: 1.0 * currentXScaleSign, y: 1.0, duration: 0.1)
             pet.run(SKAction.sequence([scaleUp, scaleDown]))
-            
-            print("结束拖动宠物，新速度方向: \(petHorizontalSpeed > 0 ? "向右" : "向左")")
         }
     }
+    
     
     override func mouseDragged(with event: NSEvent) {
         if currentState == .beingDragged {
