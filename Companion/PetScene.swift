@@ -17,10 +17,9 @@ class PetScene: SKScene {
     
     override func didMove(to view: SKView) {
         self.backgroundColor = .clear
-        
         // 创建多个宠物
-        addPet(at: CGPoint(x: self.size.width / 3, y: 100))
-        addPet(at: CGPoint(x: self.size.width * 2 / 3, y: 100))
+        addPet()
+        addPet()
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let vc = self.viewController else { return }
@@ -30,9 +29,10 @@ class PetScene: SKScene {
         }
     }
     
-    private func addPet(at position: CGPoint) {
+    private func addPet() {
+        let WIDTH_RANGE: ClosedRange<Double> = 0...self.size.width
         let pet = PetSpriteNode(imageNamed: "cat_black_idle-0")
-        pet.position = position
+        pet.position = CGPoint(x: Double.random(in: WIDTH_RANGE), y: pet.size.height/2)
         self.addChild(pet)
         pets.append(pet)
         lastKnownPetFrames.append(pet.frame)
