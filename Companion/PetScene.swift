@@ -17,8 +17,7 @@ class PetScene: SKScene {
     
     override func didMove(to view: SKView) {
         self.backgroundColor = .clear
-        // 创建多个宠物
-        addPet()
+        // 可以创建多个宠物
         addPet()
         
         DispatchQueue.main.async { [weak self] in

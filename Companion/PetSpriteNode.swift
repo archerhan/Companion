@@ -212,27 +212,21 @@ class PetSpriteNode: SKSpriteNode {
         switch newState {
         case .walking:
             playAnimation(.walk)
-            alpha = 1.0
             
         case .idle:
             playAnimation(.idle)
-            alpha = 1.0
             
         case .sitting:
             playAnimation(.front)
-            alpha = 1.0
             
         case .beingDragged:
             playAnimation(.drag)
-            alpha = 0.8
         
         case .falling:
             playAnimation(.drag)
-            alpha = 1.0
         
         case .sleeping:
             playAnimation(.sleep)
-            alpha = 0.8
             
             let breatheIn = SKAction.fadeAlpha(to: 0.7, duration: 1.5)
             let breatheOut = SKAction.fadeAlpha(to: 0.8, duration: 1.5)
