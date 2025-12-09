@@ -27,7 +27,11 @@ enum PetAnimation: String, CaseIterable {
 }
 
 class PetSpriteNode: SKSpriteNode {
-    // 每个宠物自己的状态相关属性
+    // MARK: - 属性
+    private let configuration: PetConfiguration
+    var petType: PetType { configuration.petType }
+    
+    // 宠物状态相关
     var petState: PetState = .idle {
         didSet {
             handleStateChange(from: oldValue, to: petState)
@@ -44,26 +48,42 @@ class PetSpriteNode: SKSpriteNode {
     private var lastMouseDownTime: TimeInterval = 0
     private var mouseDownCount: Int = 0
     
-    // 常量定义
-    private let WALK_DURATION_RANGE: ClosedRange<TimeInterval> = 10...20
-    private let IDLE_DURATION_RANGE: ClosedRange<TimeInterval> = 3...8
-    private let SITTING_DURATION_RANGE: ClosedRange<TimeInterval> = 10...15
-    private let SLEEPING_DURATION_RANGE: ClosedRange<TimeInterval> = 30...60
-    private let HUNGER_CYCLE_RANGE: ClosedRange<TimeInterval> = 20...30
-    private let ANGRY_CLICK_THRESHOLD = 3
-    private let DOUBLE_CLICK_INTERVAL: TimeInterval = 0.3
-    
     // 动画相关
     private var animations: [PetAnimation: [SKTexture]] = [:]
     private var currentAnimation: PetAnimation?
     
-    init(imageNamed name: String) {
-        let texture = SKTexture(imageNamed: name)
+    // MARK: - 初始化器
+    init(configuration: PetConfiguration) {
+        self.configuration = configuration
+        
+        // 使用配置中的默认图片作为初始纹理
+        let initialTextureName = "\(configuration.baseName)_front-0"
+        let texture = SKTexture(imageNamed: initialTextureName)
+        
         super.init(texture: texture, color: .clear, size: texture.size())
+        
+        setupPet()
+    }
+    
+    convenience init(petType: PetType) {
+        let config = PetType.configuration(for: petType)
+        self.init(configuration: config)
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    // MARK: - 设置方法
+    private func setupPet() {
         loadAllAnimations()
-        self.name = "desktopPet"
-        self.size = CGSize(width: 80, height: 80)
+        
+        self.name = "desktopPet_\(configuration.petType.rawValue)"
+        self.size = configuration.defaultSize
         self.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        
+        // 初始化速度
+        petHorizontalSpeed = CGFloat.random(in: configuration.walkSpeedRange)
         
         // 初始化状态
         playAnimation(.idle)
@@ -71,16 +91,13 @@ class PetSpriteNode: SKSpriteNode {
         resetHungerTimer()
     }
     
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
+    // MARK: - 动画加载
     private func loadAllAnimations() {
-        let petAtlas = SKTextureAtlas(named: "CatBlackAnimations")
+        let petAtlas = SKTextureAtlas(named: configuration.textureAtlasName)
         
-        for animationType in PetAnimation.allCases {
+        for animationType in configuration.animations {
             var frames: [SKTexture] = []
-            let texturePrefix = "cat_black_\(animationType.rawValue)-"
+            let texturePrefix = "\(configuration.baseName)_\(animationType.rawValue)-"
             
             let textureNames = petAtlas.textureNames.filter {
                 $0.starts(with: texturePrefix)
@@ -92,53 +109,31 @@ class PetSpriteNode: SKSpriteNode {
             
             if !frames.isEmpty {
                 animations[animationType] = frames
+            } else {
+                print("Warning: No textures found for animation \(animationType.rawValue) with prefix \(texturePrefix)")
             }
         }
     }
     
-    // 每个宠物独立的状态更新
+    // MARK: - 计时器重置
+    private func resetStateTimer() {
+        if let durationRange = configuration.stateDurations[petState] {
+            timeUntilNextStateChange = TimeInterval.random(in: durationRange)
+        } else {
+            // 默认值
+            timeUntilNextStateChange = TimeInterval.random(in: 3...8)
+        }
+    }
+    
+    private func resetHungerTimer() {
+        timeUntilHungry = TimeInterval.random(in: 20...30)
+    }
+    
+    // MARK: - 更新循环
     func update(deltaTime: TimeInterval) {
         // --- 处理下落状态 ---
         if petState == .falling {
-            // 应用重力
-            let gravity = CGVector(dx: 0, dy: -100)
-            petVelocity.y += CGFloat(gravity.dy) * CGFloat(deltaTime)
-            petVelocity.x = petHorizontalSpeed * 0.8
-            
-            var newPosition = position
-            newPosition.x += petVelocity.x * CGFloat(deltaTime)
-            newPosition.y += petVelocity.y * CGFloat(deltaTime)
-            
-            let petHalfWidth = size.width / 2
-            let petHalfHeight = size.height / 2
-            
-            // 边界检查
-            if newPosition.x - petHalfWidth <= 0 && petVelocity.x < 0 {
-                newPosition.x = petHalfWidth
-                petVelocity.x *= -0.5
-                petHorizontalSpeed *= -0.5
-            } else if newPosition.x + petHalfWidth >= parent?.frame.width ?? 800 && petVelocity.x > 0 {
-                newPosition.x = (parent?.frame.width ?? 800) - petHalfWidth
-                petVelocity.x *= -0.5
-                petHorizontalSpeed *= -0.5
-            }
-            
-            // 地面碰撞
-            let groundY: CGFloat = 0
-            if newPosition.y - petHalfHeight <= groundY && petVelocity.y < 0 {
-                newPosition.y = groundY + petHalfHeight
-                petState = previousStateBeforeAction
-                petVelocity = .zero
-            }
-            
-            position = newPosition
-            
-            // 更新方向
-            if petVelocity.x != 0 {
-                let shouldFaceRight = petVelocity.x > 0
-                xScale = abs(xScale) * (shouldFaceRight ? 1.0 : -1.0)
-            }
-            
+            handleFallingState(deltaTime: deltaTime)
             return
         }
         
@@ -156,46 +151,78 @@ class PetSpriteNode: SKSpriteNode {
             
             // 检查是否需要切换状态
             if timeUntilNextStateChange <= 0 {
-                if petState == .walking {
-                    petState = .idle
-                } else if petState == .idle {
-                    petState = .sitting
-                } else {
-                    petState = .walking
-                }
+                transitionToNextState()
                 resetStateTimer()
             }
         }
         
         // 行走状态更新位置
         if petState == .walking {
-            let petHalfWidth = size.width / 2
-            if (position.x - petHalfWidth <= 0 && petHorizontalSpeed < 0) ||
-               (position.x + petHalfWidth >= parent?.frame.width ?? 800 && petHorizontalSpeed > 0) {
-                petHorizontalSpeed *= -1
-                updateDirection()
-            }
-            position.x += petHorizontalSpeed * CGFloat(deltaTime)
+            updateWalkingPosition(deltaTime: deltaTime)
         }
     }
     
-    private func resetStateTimer() {
+    private func handleFallingState(deltaTime: TimeInterval) {
+        let gravity = CGVector(dx: 0, dy: -100)
+        petVelocity.y += CGFloat(gravity.dy) * CGFloat(deltaTime)
+        petVelocity.x = petHorizontalSpeed * 0.8
+        
+        var newPosition = position
+        newPosition.x += petVelocity.x * CGFloat(deltaTime)
+        newPosition.y += petVelocity.y * CGFloat(deltaTime)
+        
+        let petHalfWidth = size.width / 2
+        let petHalfHeight = size.height / 2
+        
+        // 边界检查
+        if newPosition.x - petHalfWidth <= 0 && petVelocity.x < 0 {
+            newPosition.x = petHalfWidth
+            petVelocity.x *= -0.5
+            petHorizontalSpeed *= -0.5
+        } else if newPosition.x + petHalfWidth >= parent?.frame.width ?? 800 && petVelocity.x > 0 {
+            newPosition.x = (parent?.frame.width ?? 800) - petHalfWidth
+            petVelocity.x *= -0.5
+            petHorizontalSpeed *= -0.5
+        }
+        
+        // 地面碰撞
+        let groundY: CGFloat = 0
+        if newPosition.y - petHalfHeight <= groundY && petVelocity.y < 0 {
+            newPosition.y = groundY + petHalfHeight
+            petState = previousStateBeforeAction
+            petVelocity = .zero
+        }
+        
+        position = newPosition
+        
+        // 更新方向
+        if petVelocity.x != 0 {
+            let shouldFaceRight = petVelocity.x > 0
+            xScale = abs(xScale) * (shouldFaceRight ? 1.0 : -1.0)
+        }
+    }
+    
+    private func transitionToNextState() {
         switch petState {
         case .walking:
-            timeUntilNextStateChange = TimeInterval.random(in: WALK_DURATION_RANGE)
+            petState = .idle
         case .idle:
-            timeUntilNextStateChange = TimeInterval.random(in: IDLE_DURATION_RANGE)
+            petState = .sitting
         case .sitting:
-            timeUntilNextStateChange = TimeInterval.random(in: SITTING_DURATION_RANGE)
-        case .sleeping:
-            timeUntilNextStateChange = TimeInterval.random(in: SLEEPING_DURATION_RANGE)
+            petState = .walking
         default:
-            timeUntilNextStateChange = .greatestFiniteMagnitude
+            petState = .idle
         }
     }
     
-    private func resetHungerTimer() {
-        timeUntilHungry = TimeInterval.random(in: HUNGER_CYCLE_RANGE)
+    private func updateWalkingPosition(deltaTime: TimeInterval) {
+        let petHalfWidth = size.width / 2
+        if (position.x - petHalfWidth <= 0 && petHorizontalSpeed < 0) ||
+           (position.x + petHalfWidth >= parent?.frame.width ?? 800 && petHorizontalSpeed > 0) {
+            petHorizontalSpeed *= -1
+            updateDirection()
+        }
+        position.x += petHorizontalSpeed * CGFloat(deltaTime)
     }
     
     private func updateDirection() {
@@ -206,6 +233,7 @@ class PetSpriteNode: SKSpriteNode {
         }
     }
     
+    // MARK: - 状态处理
     private func handleStateChange(from oldState: PetState, to newState: PetState) {
         guard oldState != newState else { return }
         
@@ -217,23 +245,32 @@ class PetSpriteNode: SKSpriteNode {
             playAnimation(.idle)
             
         case .sitting:
-            playAnimation(.front)
+            if configuration.animations.contains(.front) {
+                playAnimation(.front)
+            } else {
+                playAnimation(.idle) // 备用
+            }
             
-        case .beingDragged:
-            playAnimation(.drag)
-        
-        case .falling:
-            playAnimation(.drag)
+        case .beingDragged, .falling:
+            if configuration.animations.contains(.drag) {
+                playAnimation(.drag)
+            } else {
+                playAnimation(.idle) // 备用
+            }
         
         case .sleeping:
-            playAnimation(.sleep)
+            if configuration.animations.contains(.sleep) {
+                playAnimation(.sleep)
+            } else {
+                playAnimation(.idle) // 备用
+            }
             
             let breatheIn = SKAction.fadeAlpha(to: 0.7, duration: 1.5)
             let breatheOut = SKAction.fadeAlpha(to: 0.8, duration: 1.5)
             let breathing = SKAction.repeatForever(SKAction.sequence([breatheIn, breatheOut]))
             run(breathing, withKey: "breathing")
             
-            let sleepDuration = TimeInterval.random(in: SLEEPING_DURATION_RANGE)
+            let sleepDuration = TimeInterval.random(in: 30...60)
             
             run(SKAction.wait(forDuration: sleepDuration)) { [weak self] in
                 guard let self = self else { return }
@@ -244,31 +281,41 @@ class PetSpriteNode: SKSpriteNode {
             }
                 
         case .eating:
-            let repeatCount = 10
-            playAnimation(.eat, repeatsForever: false, repeatCount: repeatCount)
-            
-            let singleDuration = getAnimationDuration(for: .eat)
-            let totalDuration = singleDuration * TimeInterval(repeatCount)
-            
-            run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
-                guard let self = self else { return }
-                self.previousStateBeforeAction = self.petState
-                self.petState = .sleeping
-                self.resetHungerTimer()
+            if configuration.animations.contains(.eat) {
+                let repeatCount = 10
+                playAnimation(.eat, repeatsForever: false, repeatCount: repeatCount)
+                
+                let singleDuration = getAnimationDuration(for: .eat)
+                let totalDuration = singleDuration * TimeInterval(repeatCount)
+                
+                run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
+                    guard let self = self else { return }
+                    self.previousStateBeforeAction = self.petState
+                    self.petState = .sleeping
+                    self.resetHungerTimer()
+                }
+            } else {
+                // 如果没有吃动画，直接进入睡眠状态
+                petState = .sleeping
             }
                 
         case .angry:
-            let repeatCount = 2
-            playAnimation(.angry, repeatsForever: false, repeatCount: repeatCount)
-            
-            let singleDuration = getAnimationDuration(for: .angry)
-            let totalDuration = singleDuration * TimeInterval(repeatCount)
-            
-            run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
-                guard let self = self else { return }
-                if self.petState == .angry {
-                    self.petState = self.previousStateBeforeAction
+            if configuration.animations.contains(.angry) {
+                let repeatCount = 2
+                playAnimation(.angry, repeatsForever: false, repeatCount: repeatCount)
+                
+                let singleDuration = getAnimationDuration(for: .angry)
+                let totalDuration = singleDuration * TimeInterval(repeatCount)
+                
+                run(SKAction.wait(forDuration: totalDuration)) { [weak self] in
+                    guard let self = self else { return }
+                    if self.petState == .angry {
+                        self.petState = self.previousStateBeforeAction
+                    }
                 }
+            } else {
+                // 如果没有生气动画，切换回之前状态
+                petState = previousStateBeforeAction
             }
         }
     }
@@ -279,24 +326,14 @@ class PetSpriteNode: SKSpriteNode {
         let nextState = nextStates[randomIndex]
         
         petState = nextState
-        
-        switch nextState {
-        case .walking:
-            playAnimation(.walk)
-        case .idle:
-            playAnimation(.idle)
-        case .sitting:
-            playAnimation(.front)
-        default:
-            break
-        }
-        
         resetStateTimer()
     }
     
+    // MARK: - 动画控制
     func playAnimation(_ type: PetAnimation, repeatsForever: Bool = true, timePerFrame: TimeInterval = 0.1, repeatCount: Int = 1) {
         guard currentAnimation != type else { return }
         guard let frames = animations[type], !frames.isEmpty else {
+            print("No frames available for animation: \(type.rawValue)")
             return
         }
         
@@ -328,9 +365,8 @@ class PetSpriteNode: SKSpriteNode {
         return TimeInterval(frames.count) * timePerFrame
     }
     
-    // 处理点击事件
+    // MARK: - 交互处理
     func handleMouseDown(at location: CGPoint, event: NSEvent) -> Bool {
-        // 检查是否点击在宠物身上
         guard self.contains(location) else { return false }
         
         // 特殊状态不能交互
@@ -341,7 +377,7 @@ class PetSpriteNode: SKSpriteNode {
         
         // 快速点击检测
         let currentTime = event.timestamp
-        if currentTime - lastMouseDownTime < DOUBLE_CLICK_INTERVAL {
+        if currentTime - lastMouseDownTime < 0.3 {
             mouseDownCount += 1
         } else {
             mouseDownCount = 1
@@ -350,7 +386,7 @@ class PetSpriteNode: SKSpriteNode {
         
         // 如果达到生气阈值
         let dailyStates: [PetState] = [.walking, .idle, .sitting]
-        if mouseDownCount >= ANGRY_CLICK_THRESHOLD && dailyStates.contains(petState) {
+        if mouseDownCount >= 3 && dailyStates.contains(petState) {
             mouseDownCount = 0
             previousStateBeforeAction = petState
             petState = .angry
@@ -367,3 +403,4 @@ class PetSpriteNode: SKSpriteNode {
         return true
     }
 }
+

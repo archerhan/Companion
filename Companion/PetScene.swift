@@ -1,10 +1,10 @@
-// PetScene.swift
+// PetScene.swift - 修改后的场景类
 import SpriteKit
 
 class PetScene: SKScene {
     weak var viewController: ViewController?
     
-    // 改为宠物数组
+    // 宠物数组
     private var pets: [PetSpriteNode] = []
     
     // 当前拖拽相关属性
@@ -17,8 +17,12 @@ class PetScene: SKScene {
     
     override func didMove(to view: SKView) {
         self.backgroundColor = .clear
-        // 可以创建多个宠物
-        addPet()
+        
+        // 添加初始宠物（可配置添加多个）
+        addPet(type: .penguin)
+        // addPet(type: .catWhite)
+        // addPet(type: .dogGolden)
+        // addPet(type: .bunny)
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let vc = self.viewController else { return }
@@ -28,13 +32,55 @@ class PetScene: SKScene {
         }
     }
     
-    private func addPet() {
-        let WIDTH_RANGE: ClosedRange<Double> = 0...self.size.width
-        let pet = PetSpriteNode(imageNamed: "cat_black_idle-0")
-        pet.position = CGPoint(x: Double.random(in: WIDTH_RANGE), y: pet.size.height/2)
+    // 添加特定类型的宠物
+    private func addPet(type: PetType) {
+        let pet = PetFactory.createPet(of: type)
+        pet.position = getRandomPosition(for: pet)
         self.addChild(pet)
         pets.append(pet)
         lastKnownPetFrames.append(pet.frame)
+    }
+    
+    // 添加随机宠物
+    func addRandomPet() {
+        let pet = PetFactory.createRandomPet()
+        pet.position = getRandomPosition(for: pet)
+        self.addChild(pet)
+        pets.append(pet)
+        lastKnownPetFrames.append(pet.frame)
+        
+        // 更新追踪区域
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let vc = self.viewController else { return }
+            vc.updateTrackingArea(for: pet)
+        }
+    }
+    
+    // 移除指定宠物
+    func removePet(_ pet: PetSpriteNode) {
+        if let index = pets.firstIndex(of: pet) {
+            pet.removeFromParent()
+            pets.remove(at: index)
+            if index < lastKnownPetFrames.count {
+                lastKnownPetFrames.remove(at: index)
+            }
+        }
+    }
+    
+    // 移除所有宠物
+    func removeAllPets() {
+        pets.forEach { $0.removeFromParent() }
+        pets.removeAll()
+        lastKnownPetFrames.removeAll()
+    }
+    
+    // 获取随机的起始位置
+    private func getRandomPosition(for pet: PetSpriteNode) -> CGPoint {
+        let minX = pet.size.width / 2
+        let maxX = self.size.width - pet.size.width / 2
+        let x = CGFloat.random(in: minX...maxX)
+        let y = pet.size.height / 2
+        return CGPoint(x: x, y: y)
     }
     
     override func update(_ currentTime: TimeInterval) {
@@ -180,3 +226,4 @@ class PetScene: SKScene {
         }
     }
 }
+
