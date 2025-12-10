@@ -1,4 +1,4 @@
-// PetScene.swift - 修改后的场景类
+// PetScene.swift - 适配新版状态系统
 import SpriteKit
 
 class PetScene: SKScene {
@@ -18,8 +18,8 @@ class PetScene: SKScene {
     override func didMove(to view: SKView) {
         self.backgroundColor = .clear
         
-        // 添加初始宠物（可配置添加多个）
-        addPet(type: .penguin)
+        // 添加初始宠物
+        addPet(type: .catBlack)
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let vc = self.viewController else { return }
@@ -31,7 +31,7 @@ class PetScene: SKScene {
     
     // 添加特定类型的宠物
     private func addPet(type: PetType) {
-        let pet = PetFactory.createPet(of: type)
+        let pet = PetSpriteNode(petType: type)
         pet.position = getRandomPosition(for: pet)
         self.addChild(pet)
         pets.append(pet)
@@ -40,17 +40,9 @@ class PetScene: SKScene {
     
     // 添加随机宠物
     func addRandomPet() {
-        let pet = PetFactory.createRandomPet()
-        pet.position = getRandomPosition(for: pet)
-        self.addChild(pet)
-        pets.append(pet)
-        lastKnownPetFrames.append(pet.frame)
-        
-        // 更新追踪区域
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let vc = self.viewController else { return }
-            vc.updateTrackingArea(for: pet)
-        }
+        let types = PetType.allCases
+        let randomIndex = Int.random(in: 0..<types.count)
+        addPet(type: types[randomIndex])
     }
     
     // 移除指定宠物
@@ -100,7 +92,8 @@ class PetScene: SKScene {
         guard let window = self.view?.window, let skView = self.view else { return }
         
         // 检查是否有正在被拖拽的宠物
-        if let draggedPet = draggedPet, draggedPet.petState == .beingDragged {
+        if let draggedPet = draggedPet,
+           case .nonInteractive(.beingDragged) = draggedPet.currentState {
             window.ignoresMouseEvents = false
             NSCursor.pointingHand.set()
             return
@@ -115,9 +108,8 @@ class PetScene: SKScene {
         
         for pet in pets {
             if pet.contains(mouseLocationInScene) {
-                // 检查宠物是否处于特殊状态
-                let specialStates: [PetState] = [.sleeping, .eating, .angry, .falling]
-                if !specialStates.contains(pet.petState) {
+                // 检查宠物是否处于可交互状态
+                if pet.currentState.canInteract {
                     isMouseOnAnyPet = true
                     break
                 }
@@ -139,7 +131,8 @@ class PetScene: SKScene {
         // 检查点击到了哪个宠物
         for pet in pets {
             if pet.handleMouseDown(at: locationInScene, event: event) {
-                if pet.petState == .beingDragged {
+                // 检查是否开始拖拽
+                if case .nonInteractive(.beingDragged) = pet.currentState {
                     draggedPet = pet
                     dragOffset = CGPoint(x: locationInScene.x - pet.position.x,
                                          y: locationInScene.y - pet.position.y)
@@ -151,31 +144,20 @@ class PetScene: SKScene {
     }
     
     override func mouseDragged(with event: NSEvent) {
-        guard let pet = draggedPet, pet.petState == .beingDragged else { return }
+        guard let pet = draggedPet,
+              case .nonInteractive(.beingDragged) = pet.currentState else { return }
         
         let newLocation = event.location(in: self)
-        var newPosition = CGPoint(
+        
+        // 更新拖拽位置
+        pet.updateDragPosition(to: CGPoint(
             x: newLocation.x - dragOffset.x,
             y: newLocation.y - dragOffset.y
-        )
-        
-        // 边界限制
-        let petHalfWidth = pet.size.width / 2
-        let petHalfHeight = pet.size.height / 2
-        
-        let minX = petHalfWidth
-        let maxX = self.size.width - petHalfWidth
-        newPosition.x = max(minX, min(newPosition.x, maxX))
-        
-        let minY = petHalfHeight
-        let maxY = self.size.height - petHalfHeight
-        newPosition.y = max(minY, min(newPosition.y, maxY))
-        
-        pet.position = newPosition
+        ))
     }
     
     override func mouseUp(with event: NSEvent) {
-        guard let pet = draggedPet, pet.petState == .beingDragged else { return }
+        guard let pet = draggedPet else { return }
         
         // 计算抛出速度
         if let lastDragLocation = dragStartLocation {
@@ -188,10 +170,10 @@ class PetScene: SKScene {
             } else if totalDragDistanceX < -dragThreshold {
                 pet.petHorizontalSpeed = -abs(pet.petHorizontalSpeed)
             }
-            
-            pet.petVelocity.y = -100
-            pet.petState = .falling
         }
+        
+        // 通知宠物拖拽结束
+        pet.handleMouseUp()
         
         // 重置追踪变量
         dragStartLocation = nil
@@ -221,6 +203,42 @@ class PetScene: SKScene {
                 }
             }
         }
+    }
+    
+    // MARK: - 工具方法
+    func getPetAtPosition(_ position: CGPoint) -> PetSpriteNode? {
+        return pets.first { $0.contains(position) }
+    }
+    
+    func changePetState(to state: PetState, forPetAt position: CGPoint? = nil) {
+        if let position = position {
+            // 改变指定位置的宠物状态
+            if let pet = getPetAtPosition(position) {
+                pet.currentState = state
+            }
+        } else {
+            // 改变所有宠物状态
+            for pet in pets {
+                pet.currentState = state
+            }
+        }
+    }
+    
+    func debugPrintStates() {
+        print("\n=== 宠物状态报告 ===")
+        for (index, pet) in pets.enumerated() {
+            switch pet.currentState {
+            case .daily(let dailyState):
+                print("宠物 \(index) (\(pet.petType.rawValue)): 日常 - \(dailyState.rawValue)")
+            case .interrupt(let interruptState):
+                print("宠物 \(index) (\(pet.petType.rawValue)): 打断 - \(interruptState.rawValue)")
+            case .nonInteractive(let nonInteractiveState):
+                print("宠物 \(index) (\(pet.petType.rawValue)): 不可交互 - \(nonInteractiveState.rawValue)")
+            case .play(let playState):
+                print("宠物 \(index) (\(pet.petType.rawValue)): 玩耍 - \(playState.rawValue)")
+            }
+        }
+        print("==================\n")
     }
 }
 
