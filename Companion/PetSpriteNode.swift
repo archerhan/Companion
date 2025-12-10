@@ -151,7 +151,7 @@ class PetSpriteNode: SKSpriteNode {
             
             // 检查是否需要切换状态
             if timeUntilNextStateChange <= 0 {
-                transitionToNextState()
+                transitionToNextCommonState()
                 resetStateTimer()
             }
         }
@@ -201,20 +201,7 @@ class PetSpriteNode: SKSpriteNode {
             xScale = abs(xScale) * (shouldFaceRight ? 1.0 : -1.0)
         }
     }
-    
-    private func transitionToNextState() {
-        switch petState {
-        case .walking:
-            petState = .idle
-        case .idle:
-            petState = .sitting
-        case .sitting:
-            petState = .walking
-        default:
-            petState = .idle
-        }
-    }
-    
+
     private func updateWalkingPosition(deltaTime: TimeInterval) {
         let petHalfWidth = size.width / 2
         if (position.x - petHalfWidth <= 0 && petHorizontalSpeed < 0) ||
@@ -276,7 +263,7 @@ class PetSpriteNode: SKSpriteNode {
                 guard let self = self else { return }
                 if self.petState == .sleeping {
                     self.removeAction(forKey: "breathing")
-                    self.handleAfterSleepingTransition()
+                    self.transitionToNextCommonState()
                 }
             }
                 
@@ -320,7 +307,7 @@ class PetSpriteNode: SKSpriteNode {
         }
     }
     
-    private func handleAfterSleepingTransition() {
+    private func transitionToNextCommonState() {
         let nextStates: [PetState] = [.sitting, .walking, .idle]
         let randomIndex = Int.random(in: 0..<nextStates.count)
         let nextState = nextStates[randomIndex]

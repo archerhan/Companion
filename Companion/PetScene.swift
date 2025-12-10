@@ -20,9 +20,6 @@ class PetScene: SKScene {
         
         // 添加初始宠物（可配置添加多个）
         addPet(type: .penguin)
-        // addPet(type: .catWhite)
-        // addPet(type: .dogGolden)
-        // addPet(type: .bunny)
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let vc = self.viewController else { return }
