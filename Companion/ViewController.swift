@@ -9,10 +9,19 @@ import SpriteKit
 
 class ViewController: NSViewController {
 
-    @IBOutlet var skView: SKView!
+    var skView: SKView!
     
     private var petTrackingArea: NSTrackingArea?
     private var debugLayer: CALayer?
+    
+    override func loadView() {
+        let frame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let view = SKView(frame: frame)
+        view.wantsLayer = true
+        view.allowsTransparency = true
+        self.view = view
+        self.skView = view
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
