@@ -33,7 +33,7 @@ class ViewController: NSViewController {
             let scene = PetScene(size: view.bounds.size)
             scene.scaleMode = .resizeFill
             scene.backgroundColor = .clear
-            scene.viewController = self
+//            scene.viewController = self
             
             view.presentScene(scene)
             view.ignoresSiblingOrder = true

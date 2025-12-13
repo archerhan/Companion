@@ -1,244 +1,230 @@
-// PetScene.swift - 适配新版状态系统
 import SpriteKit
+import Cocoa
+
+// 定义一个协议，让 Scene 能与 ViewController 通信（例如更新鼠标追踪区域）
+protocol PetSceneDelegate: AnyObject {
+    func updateTrackingArea(for view: NSView, rect: NSRect)
+}
 
 class PetScene: SKScene {
-    weak var viewController: ViewController?
     
-    // 宠物数组
+    // MARK: - 属性
+    
+    // 弱引用 ViewController (需要你在 VC 中设置)
+    weak var petSceneDelegate: PetSceneDelegate?
+    
+    // 宠物集合
     private var pets: [PetSpriteNode] = []
     
-    // 当前拖拽相关属性
+    // 拖拽状态记录
     private var draggedPet: PetSpriteNode?
     private var dragOffset: CGPoint = .zero
-    private var lastKnownPetFrames: [CGRect] = []
-    private var dragStartLocation: CGPoint?
+    private var lastDragLocation: CGPoint? // 用于计算抛掷速度
+    private var lastDragTime: TimeInterval = 0
     
+    // 时间控制
     private var lastUpdateTime: TimeInterval = 0
+    
+    // MARK: - 生命周期
     
     override func didMove(to view: SKView) {
         self.backgroundColor = .clear
+        self.scaleMode = .resizeFill
         
-        // 添加初始宠物
-        addPet(type: .catBlack)
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let vc = self.viewController else { return }
-            self.pets.forEach { pet in
-                vc.updateTrackingArea(for: pet)
-            }
-        }
+        // 添加初始宠物 (假设你已经有了 CatBlackConfiguration)
+        addPet(config: CatBlackConfiguration())
     }
     
-    // 添加特定类型的宠物
-    private func addPet(type: PetType) {
-        let pet = PetSpriteNode(petType: type)
-        pet.position = getRandomPosition(for: pet)
+    // MARK: - 宠物管理
+    
+    func addPet(config: PetConfiguration) {
+        let pet = PetSpriteNode(configuration: config)
+        
+        // 随机出生位置 (屏幕底部范围)
+        let minX = pet.size.width
+        let maxX = self.size.width - pet.size.width
+        pet.position = CGPoint(x: CGFloat.random(in: minX...maxX), y: pet.size.height / 2)
+        
         self.addChild(pet)
         pets.append(pet)
-        lastKnownPetFrames.append(pet.frame)
     }
     
-    // 添加随机宠物
-    func addRandomPet() {
-        let types = PetType.allCases
-        let randomIndex = Int.random(in: 0..<types.count)
-        addPet(type: types[randomIndex])
-    }
-    
-    // 移除指定宠物
     func removePet(_ pet: PetSpriteNode) {
+        pet.removeFromParent()
         if let index = pets.firstIndex(of: pet) {
-            pet.removeFromParent()
             pets.remove(at: index)
-            if index < lastKnownPetFrames.count {
-                lastKnownPetFrames.remove(at: index)
-            }
         }
     }
     
-    // 移除所有宠物
-    func removeAllPets() {
-        pets.forEach { $0.removeFromParent() }
-        pets.removeAll()
-        lastKnownPetFrames.removeAll()
-    }
-    
-    // 获取随机的起始位置
-    private func getRandomPosition(for pet: PetSpriteNode) -> CGPoint {
-        let minX = pet.size.width / 2
-        let maxX = self.size.width - pet.size.width / 2
-        let x = CGFloat.random(in: minX...maxX)
-        let y = pet.size.height / 2
-        return CGPoint(x: x, y: y)
-    }
+    // MARK: - 核心循环 (Update Loop)
     
     override func update(_ currentTime: TimeInterval) {
-        updateMouseInteraction()
-        
-        if lastUpdateTime == 0 {
-            lastUpdateTime = currentTime
-            return
-        }
+        // 1. 计算 Delta Time
+        if lastUpdateTime == 0 { lastUpdateTime = currentTime }
         let deltaTime = currentTime - lastUpdateTime
         lastUpdateTime = currentTime
         
-        // 更新所有宠物
+        // 2. 更新所有宠物的内部逻辑 (AI + 物理)
         for pet in pets {
             pet.update(deltaTime: deltaTime)
         }
+        
+        // 3. 处理鼠标穿透逻辑 (核心体验)
+        updateWindowInteraction()
     }
     
-    private func updateMouseInteraction() {
-        guard let window = self.view?.window, let skView = self.view else { return }
+    // MARK: - 交互系统 (Mouse Handling)
+    
+    /// 管理窗口的鼠标穿透状态
+    /// 当鼠标悬停在可交互宠物上时，窗口捕获事件；否则窗口忽略事件（点击穿透到桌面）
+    private func updateWindowInteraction() {
+        guard let window = self.view?.window, let view = self.view else { return }
         
-        // 检查是否有正在被拖拽的宠物
-        if let draggedPet = draggedPet,
-           case .nonInteractive(.beingDragged) = draggedPet.currentState {
-            window.ignoresMouseEvents = false
-            NSCursor.pointingHand.set()
+        // 1. 如果正在拖拽，必须捕获鼠标
+        if draggedPet != nil {
+            if window.ignoresMouseEvents { window.ignoresMouseEvents = false }
+            NSCursor.closedHand.set()
             return
         }
         
-        // 检查鼠标是否在任何宠物上
+        // 2. 检测鼠标位置下的宠物
         let mouseLocationInWindow = window.mouseLocationOutsideOfEventStream
-        let mouseLocationInView = skView.convert(mouseLocationInWindow, from: nil)
+        let mouseLocationInView = view.convert(mouseLocationInWindow, from: nil)
         let mouseLocationInScene = self.convertPoint(fromView: mouseLocationInView)
         
-        var isMouseOnAnyPet = false
+        var isHoveringInteractivePet = false
         
         for pet in pets {
-            if pet.contains(mouseLocationInScene) {
-                // 检查宠物是否处于可交互状态
+            // 简单的包围盒检测 (也可以用 pet.contains，但要注意透明区域)
+            if pet.frame.contains(mouseLocationInScene) {
+                // 只有当宠物处于可交互状态时 (例如被风吹时不可交互)
                 if pet.currentState.canInteract {
-                    isMouseOnAnyPet = true
+                    isHoveringInteractivePet = true
                     break
                 }
             }
         }
         
-        if isMouseOnAnyPet {
-            window.ignoresMouseEvents = false
-            NSCursor.pointingHand.set()
+        // 3. 动态切换窗口属性
+        if isHoveringInteractivePet {
+            if window.ignoresMouseEvents { window.ignoresMouseEvents = false }
+            NSCursor.openHand.set() // 悬停手势
         } else {
-            window.ignoresMouseEvents = true
-            NSCursor.arrow.set()
+            if !window.ignoresMouseEvents { window.ignoresMouseEvents = true }
+            NSCursor.arrow.set() // 恢复普通箭头
         }
     }
     
+    // MARK: - 鼠标事件 (Event Handling)
+    
     override func mouseDown(with event: NSEvent) {
-        let locationInScene = event.location(in: self)
+        let location = event.location(in: self)
         
-        // 检查点击到了哪个宠物
-        for pet in pets {
-            if pet.handleMouseDown(at: locationInScene, event: event) {
-                // 检查是否开始拖拽
-                if case .nonInteractive(.beingDragged) = pet.currentState {
-                    draggedPet = pet
-                    dragOffset = CGPoint(x: locationInScene.x - pet.position.x,
-                                         y: locationInScene.y - pet.position.y)
-                    dragStartLocation = locationInScene
-                }
-                return // 只处理一个宠物
+        // 寻找被点击的宠物 (倒序遍历，优先处理最上层的)
+        for pet in pets.reversed() {
+            if pet.contains(location) && pet.currentState.canInteract {
+                startDrag(pet: pet, location: location)
+                return // 只拖动一个
             }
         }
     }
     
     override func mouseDragged(with event: NSEvent) {
-        guard let pet = draggedPet,
-              case .nonInteractive(.beingDragged) = pet.currentState else { return }
+        guard let pet = draggedPet else { return }
         
-        let newLocation = event.location(in: self)
+        let location = event.location(in: self)
         
-        // 更新拖拽位置
-        pet.updateDragPosition(to: CGPoint(
-            x: newLocation.x - dragOffset.x,
-            y: newLocation.y - dragOffset.y
-        ))
+        // 更新宠物位置 (视觉跟随)
+        pet.position = CGPoint(x: location.x - dragOffset.x, y: location.y - dragOffset.y)
+        
+        // 记录数据用于计算抛掷速度
+        lastDragLocation = location
+        lastDragTime = event.timestamp
     }
     
     override func mouseUp(with event: NSEvent) {
         guard let pet = draggedPet else { return }
         
-        // 计算抛出速度
-        if let lastDragLocation = dragStartLocation {
-            let currentLoc = event.location(in: self)
-            let totalDragDistanceX = currentLoc.x - lastDragLocation.x
-            let dragThreshold: CGFloat = 10.0
+        // 计算抛掷速度 (Throw Physics)
+        var velocity = CGPoint.zero
+        let currentLocation = event.location(in: self)
+        
+        // 如果最后一次拖拽发生在极短时间内，则计算速度
+        if let lastLoc = lastDragLocation, (event.timestamp - lastDragTime) < 0.1 {
+            // 简单的物理公式：速度 = 距离 / 时间
+            // 乘系数调节手感
+            let dx = currentLocation.x - lastLoc.x
+            let dy = currentLocation.y - lastLoc.y
             
-            if totalDragDistanceX > dragThreshold {
-                pet.petHorizontalSpeed = abs(pet.petHorizontalSpeed)
-            } else if totalDragDistanceX < -dragThreshold {
-                pet.petHorizontalSpeed = -abs(pet.petHorizontalSpeed)
-            }
+            // 限制最大速度防止飞出宇宙
+            let speedX = (dx * 10).clamped(to: -800...800)
+            let speedY = (dy * 10).clamped(to: -800...800)
+            
+            velocity = CGPoint(x: speedX, y: speedY)
         }
         
-        // 通知宠物拖拽结束
-        pet.handleMouseUp()
+        endDrag(pet: pet, velocity: velocity)
+    }
+    
+    // MARK: - 拖拽逻辑辅助
+    
+    private func startDrag(pet: PetSpriteNode, location: CGPoint) {
+        draggedPet = pet
+        dragOffset = CGPoint(x: location.x - pet.position.x, y: location.y - pet.position.y)
+        lastDragLocation = location
+        lastDragTime = ProcessInfo.processInfo.systemUptime
         
-        // 重置追踪变量
-        dragStartLocation = nil
+        // 通知宠物节点进入拖拽状态 (停止AI，播放被拎起来的动画)
+        pet.startDrag()
+        
+        // 简单的弹簧效果
+        pet.run(SKAction.scale(to: 1.1, duration: 0.1))
+    }
+    
+    private func endDrag(pet: PetSpriteNode, velocity: CGPoint) {
         draggedPet = nil
+        lastDragLocation = nil
+        dragOffset = .zero
         
-        // 添加弹性动画
-        let currentXScaleSign = pet.xScale.sign == .minus ? -1.0 : 1.0
-        let scaleUp = SKAction.scaleX(to: 1.05 * currentXScaleSign, y: 1.05, duration: 0.1)
-        let scaleDown = SKAction.scaleX(to: 1.0 * currentXScaleSign, y: 1.0, duration: 0.1)
-        pet.run(SKAction.sequence([scaleUp, scaleDown]))
-    }
-    
-    override func didFinishUpdate() {
-        guard let viewController = self.viewController else { return }
+        // 通知宠物落地/飞出
+        pet.endDrag(velocity: velocity)
         
-        // 更新所有宠物的追踪区域
-        for (index, pet) in pets.enumerated() {
-            let currentPetFrame = pet.frame
-            if index >= lastKnownPetFrames.count || lastKnownPetFrames[index] != currentPetFrame {
-                DispatchQueue.main.async {
-                    viewController.updateTrackingArea(for: pet)
-                }
-                if index < lastKnownPetFrames.count {
-                    lastKnownPetFrames[index] = currentPetFrame
-                } else {
-                    lastKnownPetFrames.append(currentPetFrame)
-                }
-            }
-        }
+        // 恢复缩放
+        pet.run(SKAction.scale(to: 1.0, duration: 0.1))
     }
     
-    // MARK: - 工具方法
-    func getPetAtPosition(_ position: CGPoint) -> PetSpriteNode? {
-        return pets.first { $0.contains(position) }
+    // MARK: - Debug / 外部控制接口
+    
+    /// 测试：触发所有宠物的整点报时
+    func triggerHourlyChime() {
+        pets.forEach { $0.triggerSystemEvent(.hourlyChime) } // 需在 PetSpriteNode 实现 triggerSystemEvent 映射到 Interrupt
     }
     
-    func changePetState(to state: PetState, forPetAt position: CGPoint? = nil) {
-        if let position = position {
-            // 改变指定位置的宠物状态
-            if let pet = getPetAtPosition(position) {
-                pet.currentState = state
-            }
-        } else {
-            // 改变所有宠物状态
-            for pet in pets {
-                pet.currentState = state
-            }
-        }
+    /// 测试：触发起风了
+    func triggerWindyWeather() {
+        pets.forEach { $0.triggerWind() }
     }
     
-    func debugPrintStates() {
-        print("\n=== 宠物状态报告 ===")
-        for (index, pet) in pets.enumerated() {
-            switch pet.currentState {
-            case .daily(let dailyState):
-                print("宠物 \(index) (\(pet.petType.rawValue)): 日常 - \(dailyState.rawValue)")
-            case .interrupt(let interruptState):
-                print("宠物 \(index) (\(pet.petType.rawValue)): 打断 - \(interruptState.rawValue)")
-            case .nonInteractive(let nonInteractiveState):
-                print("宠物 \(index) (\(pet.petType.rawValue)): 不可交互 - \(nonInteractiveState.rawValue)")
-            case .play(let playState):
-                print("宠物 \(index) (\(pet.petType.rawValue)): 玩耍 - \(playState.rawValue)")
-            }
-        }
-        print("==================\n")
+    /// 测试：改变指定宠物的状态
+    func debugChangeState(to state: PetState) {
+        pets.first?.trySwitchState(to: state, force: true)
     }
 }
 
+// MARK: - 辅助扩展
+
+extension Comparable {
+    func clamped(to limits: ClosedRange<Self>) -> Self {
+        return min(max(self, limits.lowerBound), limits.upperBound)
+    }
+}
+
+// 注意：triggerSystemEvent 需要在 PetSpriteNode 中稍微适配一下
+// 建议在 PetSpriteNode 中添加如下辅助方法：
+/*
+ extension PetSpriteNode {
+     func triggerSystemEvent(_ type: PetState.InterruptState) {
+        trySwitchState(to: .interrupt(type))
+     }
+ }
+*/

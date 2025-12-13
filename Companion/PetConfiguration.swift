@@ -1,81 +1,69 @@
 //
-//  PetFactory.swift
-//  Companion
+//  PetConfiguration.swift
+//  DesktopPet
 //
-//  Created by it on 2025/12/9.
+//  Created by DesignAssistant on 2025/12/13.
 //
 
-// PetConfiguration.swift - 配置系统
 import SpriteKit
 
-// MARK: - 宠物配置协议
-protocol PetConfiguration {
-    var petType: PetType { get }
-    var baseName: String { get }
-    var textureAtlasName: String { get }
-    var defaultSize: CGSize { get }
-    var walkSpeedRange: ClosedRange<CGFloat> { get }
-    
-    // 每个大类下可用的具体状态
-    var availableStates: [PetState] { get }
-    
-    // 状态持续时间
-    func stateDuration(for state: PetState) -> ClosedRange<TimeInterval>
-    
-    // 辅助方法：获取某大类下的所有状态
-    func states(in category: PetState.Category) -> [PetState]
-}
-
-// MARK: - 宠物状态分类扩展
-extension PetState {
-    enum Category {
-        case daily, interrupt, nonInteractive, play
-    }
-    
-    var category: Category {
-        switch self {
-        case .daily: return .daily
-        case .interrupt: return .interrupt
-        case .nonInteractive: return .nonInteractive
-        case .play: return .play
-        }
-    }
-}
-
-// MARK: - 宠物类型
+// MARK: - 1. 宠物类型定义
 enum PetType: String, CaseIterable {
     case catBlack = "cat_black"
     case penguin = "penguin"
-    // 可以继续添加更多类型
+    // 在这里添加更多宠物，例如: case shibaInu = "shiba_inu"
     
-    static func configuration(for type: PetType) -> PetConfiguration {
-        switch type {
-        case .catBlack:
-            return CatBlackConfiguration()
-        case .penguin:
-            return PenguinConfiguration()
+    /// 工厂方法：获取对应的配置实例
+    var configuration: PetConfiguration {
+        switch self {
+        case .catBlack: return CatBlackConfiguration()
+        case .penguin: return PenguinConfiguration()
         }
     }
 }
 
-// MARK: - 配置基类
+// MARK: - 2. 配置协议 (Protocol)
+protocol PetConfiguration {
+    /// 唯一标识
+    var petType: PetType { get }
+    
+    /// 素材命名前缀 (例如 "cat_black")
+    /// 用于拼接图片名: "cat_black_walk_01.png"
+    var baseName: String { get }
+    
+    /// 纹理图集名称 (.atlas 文件夹名)
+    var textureAtlasName: String { get }
+    
+    /// 默认渲染大小 (pt)
+    var defaultSize: CGSize { get }
+    
+    /// 行走速度范围 (像素/秒) - 允许随机快慢
+    var walkSpeedRange: ClosedRange<CGFloat> { get }
+    
+    /// AI 允许随机进入的状态列表
+    /// (通常只包含 Daily 状态，不包含被风吹、拖拽等被动状态)
+    var capableRandomStates: [PetState] { get }
+    
+    /// 获取状态持续时间
+    /// - Parameter state: 目标状态
+    /// - Returns: 时间范围 (例如 5...10 秒)
+    func durationRange(for state: PetState) -> ClosedRange<TimeInterval>
+}
+
+// MARK: - 3. 基础配置类 (Base Class)
+//以此类为基类，减少重复代码
 class BasePetConfiguration: PetConfiguration {
     let petType: PetType
     let baseName: String
-    var textureAtlasName: String = "PetAnimations"
+    let textureAtlasName: String
     let defaultSize: CGSize
     let walkSpeedRange: ClosedRange<CGFloat>
     
-    // 子类需要重写这些
-    var availableStates: [PetState] { [] }
-    
-    init(
-        petType: PetType,
-        baseName: String,
-        textureAtlasName: String,
-        defaultSize: CGSize,
-        walkSpeedRange: ClosedRange<CGFloat>
-    ) {
+    init(petType: PetType,
+         baseName: String,
+         textureAtlasName: String,
+         defaultSize: CGSize,
+         walkSpeedRange: ClosedRange<CGFloat>) {
         self.petType = petType
         self.baseName = baseName
         self.textureAtlasName = textureAtlasName
@@ -83,86 +71,101 @@ class BasePetConfiguration: PetConfiguration {
         self.walkSpeedRange = walkSpeedRange
     }
     
-    func stateDuration(for state: PetState) -> ClosedRange<TimeInterval> {
-        // 默认持续时间
-        return 3...5
-    }
-    
-    func states(in category: PetState.Category) -> [PetState] {
-        return availableStates.filter { $0.category == category }
-    }
-}
-
-// MARK: - 具体宠物配置
-final class CatBlackConfiguration: BasePetConfiguration {
-    init() {
-        super.init(
-            petType: .catBlack,
-            baseName: "cat_black",
-            textureAtlasName: "CatBlackAnimations",
-            defaultSize: CGSize(width: 80, height: 80),
-            walkSpeedRange: 25...35
-        )
-    }
-    
-    override var availableStates: [PetState] {
+    // 默认的随机状态池 (子类可覆盖)
+    var capableRandomStates: [PetState] {
         return [
-            .daily(.walking),
             .daily(.idle),
+            .daily(.walking),
             .daily(.sitting),
-            .interrupt(.eating),
-            .nonInteractive(.falling),
-            .nonInteractive(.beingDragged),
+            .daily(.sleeping)
         ]
     }
     
-    override func stateDuration(for state: PetState) -> ClosedRange<TimeInterval> {
+    // 默认的时间配置逻辑
+    func durationRange(for state: PetState) -> ClosedRange<TimeInterval> {
         switch state {
-        case .daily(let dailyState):
-            switch dailyState {
-            case .walking: return 10...20
-            case .idle: return 3...8
-            case .sitting: return 10...15
-            case .sleeping: return 30...60
+        case .daily(let s):
+            switch s {
+            case .idle:     return 10...20   // 发呆时间
+            case .walking:  return 30...50  // 走路时间
+            case .sitting:  return 15...30  // 坐着时间
+            case .sleeping: return 50...80 // 睡觉时间长一点
             }
-        case .interrupt(.eating): return 5...10
-        default: return 3...5
+            
+        case .play(let s):
+            switch s {
+            case .sliding:  return 3...5
+            }
+            
+        case .system(let s):
+            switch s {
+            case .highCPU:    return 5...10  // 烦躁动作持续多久
+            case .lowBattery: return 10...20 // 虚弱持续多久
+            case .focusMode:  return 1500...1500 // 番茄钟通常由外部打断，这里设个极大值
+            }
+            
+        case .environment:
+            // 环境状态通常由物理或外部事件结束，这里的 duration 仅作备用
+            return 2...5
+            
+        case .interrupt(let s):
+            switch s {
+            case .eating:        return 5...8
+            case .waterReminder: return 3...3 // 气泡显示时间
+            case .hourlyChime:   return 3...3
+            }
         }
     }
 }
 
+// MARK: - 4. 具体宠物实现
+
+// --- 黑猫配置 ---
+final class CatBlackConfiguration: BasePetConfiguration {
+    init() {
+        super.init(
+            petType: .catBlack,
+            baseName: "cat_black",           // 对应资源前缀: cat_black_walk-0.png
+            textureAtlasName: "CatBlack",    // 对应 Assets.xcassets 里的名字
+            defaultSize: CGSize(width: 64, height: 64),
+            walkSpeedRange: 30...50          // 猫跑得比较快
+        )
+    }
+    
+    // 可以重写随机池，比如这只猫不喜欢睡觉，只喜欢走
+    /*
+    override var capableRandomStates: [PetState] {
+        return [.daily(.walking), .daily(.idle)]
+    }
+    */
+}
+
+// --- 企鹅配置 ---
 final class PenguinConfiguration: BasePetConfiguration {
     init() {
         super.init(
             petType: .penguin,
             baseName: "penguin",
-            textureAtlasName: "PenguinAnimations",
-            defaultSize: CGSize(width: 75, height: 75),
-            walkSpeedRange: 20...30
+            textureAtlasName: "Penguin",
+            defaultSize: CGSize(width: 60, height: 60),
+            walkSpeedRange: 15...25          // 企鹅走得慢
         )
     }
     
-    override var availableStates: [PetState] {
+    override var capableRandomStates: [PetState] {
+        // 企鹅特有的滑行状态加入随机池
         return [
+            .daily(.idle),
             .daily(.walking),
-            .interrupt(.eating),
-            .nonInteractive(.falling),
-            .nonInteractive(.beingDragged),
-            .play(.sliding),
+            .play(.sliding) // 企鹅偶尔会自己滑行玩
         ]
     }
     
-    override func stateDuration(for state: PetState) -> ClosedRange<TimeInterval> {
-        switch state {
-        case .daily(let dailyState):
-            switch dailyState {
-            case .walking: return 8...15
-            case .idle: return 4...10
-            case .sitting: return 15...20
-            case .sleeping: return 40...70
-            }
-        case .interrupt(.eating): return 6...12
-        default: return 3...5
+    override func durationRange(for state: PetState) -> ClosedRange<TimeInterval> {
+        // 针对滑行做特殊时长控制
+        if case .play(.sliding) = state {
+            return 2...4 // 滑行很快结束
         }
+        return super.durationRange(for: state)
     }
 }

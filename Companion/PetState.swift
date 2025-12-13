@@ -1,116 +1,117 @@
-//
-//  PetState.swift
-//  Companion
-//
-//  Created by it on 2025/12/10.
-//
 import SpriteKit
 
+// MARK: - 状态定义
 enum PetState: Equatable {
+    // 基础生活 (低优先级)
     case daily(DailyState)
-    case interrupt(InterruptState)
-    case nonInteractive(NonInteractiveState)
+    // 互动玩耍 (中优先级)
     case play(PlayState)
+    // 系统状态 (高优先级 - 很有用)
+    case system(SystemState)
+    // 环境/不可控状态 (最高强制力)
+    case environment(EnvironmentState)
+    // 临时打断 (最高优先级 - 提醒)
+    case interrupt(InterruptState)
     
-    // MARK: - 子状态枚举
+    // --- 子状态 ---
     enum DailyState: String, Equatable {
-        case walking
-        case idle
-        case sitting
-        case sleeping
-    }
-    
-    enum InterruptState: String, Equatable {
-        case eating
-    }
-    
-    enum NonInteractiveState: String, Equatable {
-        case falling
-        case beingDragged
+        case idle, walking, sitting, sleeping
     }
     
     enum PlayState: String, Equatable {
         case sliding
+        // 未来可以加: case ballChasing
     }
     
-    // MARK: - 实用属性
-    var categoryName: String {
+    enum SystemState: String, Equatable {
+        case highCPU      // 烦躁/扇风
+        case lowBattery   // 虚弱/爬行
+        case focusMode    // 专注/看书
+    }
+    
+    enum EnvironmentState: String, Equatable {
+        case falling        // 下落
+        case beingDragged   // 拖拽
+        case blownByWind    // 被风吹
+        case stuckOnEdge    // 挂在边缘
+    }
+    
+    enum InterruptState: String, Equatable {
+        case eating         // 吃饭
+        case waterReminder  // 喝水提醒
+        case hourlyChime    // 报时
+    }
+    
+    // MARK: - 核心逻辑属性 (这是状态机的灵魂)
+    
+    /// 优先级：决定谁能打断谁
+    var priority: Int {
         switch self {
-        case .daily: return "daily"
-        case .interrupt: return "interrupt"
-        case .nonInteractive: return "nonInteractive"
-        case .play: return "play"
+        case .daily: return 0          // 随时可以被打断
+        case .play: return 10          // 玩耍中不容易被打断，除非系统事件
+        case .system: return 50        // 专注模式/高CPU，不应被闲逛打断
+        case .environment: return 80   // 风吹/拖拽，物理强制力
+        case .interrupt: return 100    // 喝水/报时，必须立即执行
         }
     }
     
-    var animation: PetAnimation {
-        switch self {
-        case .daily(let state):
-            switch state {
-            case .walking: return .walk
-            case .idle: return .idle
-            case .sitting: return .front
-            case .sleeping: return .sleep
-            }
-        case .interrupt(let state):
-            switch state {
-            case .eating: return .eat
-            }
-        case .nonInteractive(let state):
-            switch state {
-            case .falling, .beingDragged: return .drag
-            }
-        case .play(let state):
-            switch state {
-            case .sliding: return .slide
-            }
-        }
-    }
-    
+    /// 是否可交互 (鼠标是否能点)
     var canInteract: Bool {
         switch self {
-        case .nonInteractive: return false
+        case .environment(let s):
+            // 被风吹时很难点中(不可交互)，挂在边缘时可以点(解救)
+            return s == .stuckOnEdge
         case .interrupt: return false
         default: return true
         }
     }
     
-    var canAutoTransition: Bool {
-        if case .daily = self {
-            return true
+    /// 动画是否循环
+    var isLooping: Bool {
+        switch self {
+        case .interrupt: return false // 喝完水就结束
+        default: return true          // 走路、睡觉、扇风都是持续的
         }
-        return false
     }
     
-    // 实现Equatable所需的静态方法
-    static func == (lhs: PetState, rhs: PetState) -> Bool {
-        switch (lhs, rhs) {
-        case (.daily(let lhsDaily), .daily(let rhsDaily)):
-            return lhsDaily == rhsDaily
-        case (.interrupt(let lhsInterrupt), .interrupt(let rhsInterrupt)):
-            return lhsInterrupt == rhsInterrupt
-        case (.nonInteractive(let lhsNonInteractive), .nonInteractive(let rhsNonInteractive)):
-            return lhsNonInteractive == rhsNonInteractive
-        case (.play(let lhsPlay), .play(let rhsPlay)):
-            return lhsPlay == rhsPlay
-        default:
-            return false
+    /// 对应的动画 Key
+    var animation: PetAnimation {
+        switch self {
+        case .daily(let s):
+            switch s {
+            case .walking: return .walk
+            case .idle: return .idle
+            case .sitting: return .front
+            case .sleeping: return .sleep
+            }
+        case .play(let s):
+            switch s {
+            case .sliding: return .slide
+            }
+        case .system(let s):
+            switch s {
+            case .highCPU: return .angry // 复用 angry 动画作为烦躁
+            case .lowBattery: return .sleep // 复用 sleep 或做新动画
+            case .focusMode: return .front  // 复用 front 或做看书动画
+            }
+        case .environment(let s):
+            switch s {
+            case .falling, .beingDragged, .blownByWind: return .drag
+            case .stuckOnEdge: return .drag // 或者是专门的挂住动画
+            }
+        case .interrupt(let s):
+            switch s {
+            case .eating: return .eat
+            case .waterReminder, .hourlyChime: return .front // 配合气泡
+            }
         }
     }
 }
 
-// MARK: - 动画枚举（保持不变）
+// 对应更新 PetAnimation
 enum PetAnimation: String, CaseIterable {
-    case walk
-    case idle
-    case eat
-    case drag
-    case sleep
-    case angry
-    case front
-    case slide
+    case walk, idle, eat, drag, sleep, angry, front, slide
+    // 如果有资源，可以在这里加 case reading, case fanning
     
-    var animationKey: String {
-        return "\(self.rawValue)_animation"
-    }
+    var animationKey: String { "\(self.rawValue)_animation" }
 }
