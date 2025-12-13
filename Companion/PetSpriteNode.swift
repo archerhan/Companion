@@ -22,6 +22,8 @@ class PetSpriteNode: SKSpriteNode {
     private var animations: [PetAnimation: [SKTexture]] = [:]
     private var currentAnimationType: PetAnimation?
     
+    private let bubbleNode = BubbleNode()
+    
     // MARK: - 初始化
     init(configuration: PetConfiguration) {
         self.configuration = configuration
@@ -44,6 +46,8 @@ class PetSpriteNode: SKSpriteNode {
         
         // 初始状态
         trySwitchState(to: .daily(.idle), force: true)
+        
+        addChild(bubbleNode)
     }
     
     // MARK: - 核心：状态切换逻辑 (State Machine Logic)
@@ -91,10 +95,60 @@ class PetSpriteNode: SKSpriteNode {
             break
         }
         
-        // 重置计时器
-        if case .daily = state {
-            timeUntilNextRandomAction = TimeInterval.random(in: 5...10)
+        if case .interrupt(.hourlyChime) = state {
+            showTimeBubble()
+        } else {
+            // 如果切到了其他状态（比如走路），隐藏气泡
+            bubbleNode.hide()
         }
+        
+        // 重置计时器
+        let range = configuration.durationRange(for: state)
+        let duration = TimeInterval.random(in: range)
+        
+        // 更新随机计时器（给低优先级状态用的）
+        timeUntilNextRandomAction = duration
+        
+        // 如果是高优先级状态（报时、提醒），AI 不会接管，必须手动安排退出
+        if state.priority >= 100 {
+            let wait = SKAction.wait(forDuration: duration)
+            let exit = SKAction.run { [weak self] in
+                // 时间到，强制切回 Idle
+                self?.trySwitchState(to: .daily(.idle), force: true)
+            }
+            // 给这个动作加个 Key，防止状态提前改变时重复触发
+            run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
+        } else {
+            // 如果切到了普通状态，移除之前的自动退出倒计时（防止逻辑冲突）
+            removeAction(forKey: "AutoExitState")
+        }
+        
+#if DEBUG
+        print("状态: \(state) | 持续: \(String(format: "%.1f", duration))s")
+#endif
+    }
+    
+    // MARK: - 报时具体实现
+    
+    private func showTimeBubble() {
+        let date = Date()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        
+        // 根据时间显示不同文案
+        let text: String
+        if hour == 0 {
+            text = "午夜啦！睡觉觉！💤"
+        } else if hour < 6 {
+            text = "呼呼... \(hour)点..."
+        } else if hour == 12 {
+            text = "12点！干饭！🍖"
+        } else {
+            text = "现在是 \(hour) 点整 🕛"
+        }
+        
+        // 显示在头顶 (假设宠物高度 64，气泡在 y=40 处)
+        bubbleNode.show(text: text, at: CGPoint(x: 0, y: size.height/2 + 15))
     }
     
     // MARK: - Update Loop (每帧调用)
@@ -163,7 +217,7 @@ class PetSpriteNode: SKSpriteNode {
     }
     
     private func updateGravity(deltaTime: TimeInterval) {
-        let gravity: CGFloat = -1500 // 像素/秒平方
+        let gravity: CGFloat = -800 // 像素/秒平方
         petVelocity.y += gravity * CGFloat(deltaTime)
         
         position.x += petVelocity.x * CGFloat(deltaTime)
@@ -175,7 +229,7 @@ class PetSpriteNode: SKSpriteNode {
             position.y = groundY
             petVelocity = .zero
             // 落地后回到 Idle
-            trySwitchState(to: .daily(.idle), force: true)
+            trySwitchState(to: .daily(.walking), force: true)
         }
         
         // 墙壁反弹
@@ -231,7 +285,13 @@ class PetSpriteNode: SKSpriteNode {
         // 根据速度方向调整贴图朝向
         let speed = (currentState == .daily(.walking)) ? petHorizontalSpeed : petVelocity.x
         if speed != 0 {
+            // 宠物翻转
             xScale = (speed > 0) ? abs(xScale) : -abs(xScale)
+            
+            // 【关键】气泡要反向翻转，不然文字会变成镜像
+            // 如果宠物是 -1 (朝左)，气泡设为 -1 抵消翻转
+            // 注意：因为气泡是子节点，父节点翻转子节点也会翻转，所以我们要让子节点的 xScale 为负
+            bubbleNode.xScale = (xScale < 0) ? -1 : 1
         }
     }
 

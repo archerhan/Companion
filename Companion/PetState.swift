@@ -15,7 +15,7 @@ enum PetState: Equatable {
     
     // --- 子状态 ---
     enum DailyState: String, Equatable {
-        case idle, walking, sitting, sleeping
+        case idle, walking, sitting, sleeping, eating
     }
     
     enum PlayState: String, Equatable {
@@ -37,7 +37,6 @@ enum PetState: Equatable {
     }
     
     enum InterruptState: String, Equatable {
-        case eating         // 吃饭
         case waterReminder  // 喝水提醒
         case hourlyChime    // 报时
     }
@@ -69,8 +68,18 @@ enum PetState: Equatable {
     /// 动画是否循环
     var isLooping: Bool {
         switch self {
-        case .interrupt: return false // 喝完水就结束
-        default: return true          // 走路、睡觉、扇风都是持续的
+        
+        // 改为下面这样：
+        case .interrupt(let s):
+            // 吃饭动作不循环（吃完就睡），但报时建议循环（一直看着你直到时间到）
+            switch s {
+            case .hourlyChime:
+                return true
+            case .waterReminder:
+                return false
+            }
+            
+        default: return true
         }
     }
     
@@ -83,6 +92,7 @@ enum PetState: Equatable {
             case .idle: return .idle
             case .sitting: return .front
             case .sleeping: return .sleep
+            case .eating: return .eat
             }
         case .play(let s):
             switch s {
@@ -101,7 +111,6 @@ enum PetState: Equatable {
             }
         case .interrupt(let s):
             switch s {
-            case .eating: return .eat
             case .waterReminder, .hourlyChime: return .front // 配合气泡
             }
         }

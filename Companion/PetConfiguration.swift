@@ -90,6 +90,7 @@ class BasePetConfiguration: PetConfiguration {
             case .walking:  return 30...50  // 走路时间
             case .sitting:  return 15...30  // 坐着时间
             case .sleeping: return 50...80 // 睡觉时间长一点
+            case .eating:   return 5...8
             }
             
         case .play(let s):
@@ -110,9 +111,8 @@ class BasePetConfiguration: PetConfiguration {
             
         case .interrupt(let s):
             switch s {
-            case .eating:        return 5...8
             case .waterReminder: return 3...3 // 气泡显示时间
-            case .hourlyChime:   return 3...3
+            case .hourlyChime:   return 8...8
             }
         }
     }
@@ -133,11 +133,9 @@ final class CatBlackConfiguration: BasePetConfiguration {
     }
     
     // 可以重写随机池，比如这只猫不喜欢睡觉，只喜欢走
-    /*
     override var capableRandomStates: [PetState] {
-        return [.daily(.walking), .daily(.idle)]
+        return [.daily(.walking), .daily(.idle), .daily(.eating), .daily(.sitting),.daily(.sleeping)]
     }
-    */
 }
 
 // --- 企鹅配置 ---

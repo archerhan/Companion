@@ -1,17 +1,9 @@
 import SpriteKit
 import Cocoa
 
-// 定义一个协议，让 Scene 能与 ViewController 通信（例如更新鼠标追踪区域）
-protocol PetSceneDelegate: AnyObject {
-    func updateTrackingArea(for view: NSView, rect: NSRect)
-}
-
 class PetScene: SKScene {
     
     // MARK: - 属性
-    
-    // 弱引用 ViewController (需要你在 VC 中设置)
-    weak var petSceneDelegate: PetSceneDelegate?
     
     // 宠物集合
     private var pets: [PetSpriteNode] = []
@@ -24,6 +16,8 @@ class PetScene: SKScene {
     
     // 时间控制
     private var lastUpdateTime: TimeInterval = 0
+    // 报时记录
+    private var lastChimeHour: Int = -1
     
     // MARK: - 生命周期
     
@@ -31,8 +25,16 @@ class PetScene: SKScene {
         self.backgroundColor = .clear
         self.scaleMode = .resizeFill
         
-        // 添加初始宠物 (假设你已经有了 CatBlackConfiguration)
+        // 添加初始宠物
         addPet(config: CatBlackConfiguration())
+        // 初始化上次报时为当前小时，防止打开软件瞬间触发
+        lastChimeHour = Calendar.current.component(.hour, from: Date())
+        
+        // 延迟 2 秒后自动触发一次，测试效果
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.triggerHourlyChime()
+        }
+
     }
     
     // MARK: - 宠物管理
@@ -71,6 +73,23 @@ class PetScene: SKScene {
         
         // 3. 处理鼠标穿透逻辑 (核心体验)
         updateWindowInteraction()
+        
+        // 检查整点报时
+        checkHourlyChime()
+    }
+    
+    private func checkHourlyChime() {
+        let date = Date()
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.hour, .minute, .second], from: date)
+        
+        guard let hour = components.hour, let minute = components.minute else { return }
+        
+        // 逻辑：如果是 0 分，且这个小时还没报过时
+        if minute == 0 && hour != lastChimeHour {
+            triggerHourlyChime()
+            lastChimeHour = hour
+        }
     }
     
     // MARK: - 交互系统 (Mouse Handling)
@@ -195,9 +214,13 @@ class PetScene: SKScene {
     
     // MARK: - Debug / 外部控制接口
     
-    /// 测试：触发所有宠物的整点报时
+    // 触发所有宠物的报时
     func triggerHourlyChime() {
-        pets.forEach { $0.triggerSystemEvent(.hourlyChime) } // 需在 PetSpriteNode 实现 triggerSystemEvent 映射到 Interrupt
+        print("🔔 触发整点报时")
+        for pet in pets {
+            // 使用 trySwitchState，因为 priority = 100，所以除了被拖拽外都会被打断
+            pet.trySwitchState(to: .interrupt(.hourlyChime))
+        }
     }
     
     /// 测试：触发起风了
@@ -218,13 +241,3 @@ extension Comparable {
         return min(max(self, limits.lowerBound), limits.upperBound)
     }
 }
-
-// 注意：triggerSystemEvent 需要在 PetSpriteNode 中稍微适配一下
-// 建议在 PetSpriteNode 中添加如下辅助方法：
-/*
- extension PetSpriteNode {
-     func triggerSystemEvent(_ type: PetState.InterruptState) {
-        trySwitchState(to: .interrupt(type))
-     }
- }
-*/

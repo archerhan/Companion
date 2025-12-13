@@ -15,8 +15,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        
+        setupWindow()
         setupStatusBar()
+    }
+    
+    // 配置窗口全屏/无边框/透明
+    private func setupWindow() {
+        if let window = NSApplication.shared.windows.first {
+            window.styleMask = .borderless
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.level = .floating
+            window.acceptsMouseMovedEvents = true
+            if let screen = NSScreen.main {
+                window.setFrame(screen.frame, display: true, animate: false)
+            }
+            window.ignoresMouseEvents = false
+        }
     }
     
     private func setupStatusBar() {
