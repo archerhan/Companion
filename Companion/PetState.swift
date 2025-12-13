@@ -58,8 +58,12 @@ enum PetState: Equatable {
     var canInteract: Bool {
         switch self {
         case .environment(let s):
-            // 被风吹时很难点中(不可交互)，挂在边缘时可以点(解救)
-            return s == .stuckOnEdge
+            // 风吹时不可点击，挂住时可以点击解救，拖拽时肯定算交互中
+            switch s {
+            case .blownByWind: return false
+            case .stuckOnEdge: return true
+            default: return true
+            }
         case .interrupt: return false
         default: return true
         }
@@ -106,8 +110,9 @@ enum PetState: Equatable {
             }
         case .environment(let s):
             switch s {
-            case .falling, .beingDragged, .blownByWind: return .drag
-            case .stuckOnEdge: return .drag // 或者是专门的挂住动画
+            case .falling, .beingDragged: return .drag
+            case .blownByWind: return .drag // 风吹可以用 drag 动作（看起来像被拎起来）
+            case .stuckOnEdge: return .drag // 挂在墙上也可以用 drag，或者专门的 hanging
             }
         case .interrupt(let s):
             switch s {

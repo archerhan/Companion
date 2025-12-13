@@ -24,6 +24,20 @@ class PetSpriteNode: SKSpriteNode {
     
     private let bubbleNode = BubbleNode()
     
+    // MARK: - 风吹系统参数
+    // 用于风吹的随机扰动计时
+    private var windTurbulenceTimer: TimeInterval = 0
+    
+    private var flightTime: TimeInterval = 0 // 飞行时间累加器
+    
+    // 随机种子参数，保证每只猫、每次起飞的轨迹都不一样
+    private var windPhaseOffset: Double = 0      // 波的相位偏移
+    private var windFrequencySlow: Double = 0    // 慢波频率 (大弯)
+    private var windFrequencyFast: Double = 0    // 快波频率 (小抖动)
+    private var windAmplitude: CGFloat = 0       // 波的幅度 (弯拐多大)
+    private var verticalLiftSpeed: CGFloat = 0   // 上升速度
+    
+    
     // MARK: - 初始化
     init(configuration: PetConfiguration) {
         self.configuration = configuration
@@ -83,11 +97,37 @@ class PetSpriteNode: SKSpriteNode {
         // 根据状态重置一些物理参数
         switch state {
         case .environment(.falling):
-            // 抛出力度初始值，保留水平速度，给一个向下的初速度
+            // 如果是从挂住状态变成下落，给个微小的反弹速度
+            if previousState == .environment(.stuckOnEdge) {
+                petVelocity = CGPoint(x: 0, y: 0) // 直接垂直下落
+            }
             break
         case .environment(.blownByWind):
-            // 开启物理模拟(或者模拟物理)
-            petVelocity = CGPoint(x: 50, y: 30) // 假设风向
+            // 1. 重置飞行计时器
+            flightTime = 0
+            
+            // 2. 随机生成“风的性格”
+            // 相位偏移：决定它一开始是先往左还是先往右
+            windPhaseOffset = Double.random(in: 0...(2 * .pi))
+            
+            // 频率：决定拐弯有多急
+            windFrequencySlow = Double.random(in: 1.0...2.0) // 1-2秒拐一个大弯
+            windFrequencyFast = Double.random(in: 3.0...5.0) // 细节抖动
+            
+            // 幅度：决定弯拐得有多宽 (像素速度)
+            windAmplitude = CGFloat.random(in: 300...500)
+            
+            // 上升速度：基础上升力
+            verticalLiftSpeed = CGFloat.random(in: 50...100)
+            
+            // 初始给一个向上的速度，防止刚开始掉下来
+            petVelocity = CGPoint(x: 0, y: verticalLiftSpeed)
+            
+            // 开启物理重力影响设为 false (因为我们要完全手动接管轨迹)
+            self.physicsBody?.affectedByGravity = false
+        case .environment(.stuckOnEdge):
+            // 挂住时速度清零
+            petVelocity = .zero
         case .daily(.walking):
             // 确保有速度
             if petHorizontalSpeed == 0 { petHorizontalSpeed = 30 }
@@ -176,6 +216,10 @@ class PetSpriteNode: SKSpriteNode {
         case .environment(.blownByWind):
             // 风吹逻辑：持续施加力 + 弹性碰撞
             updateWindPhysics(deltaTime: deltaTime)
+        
+        case .environment(.stuckOnEdge):
+            // 挂在墙上不动，不需要物理计算
+            break
             
         case .environment(.beingDragged):
             // 拖拽中位置由 Mouse 事件控制，这里不做处理
@@ -237,28 +281,123 @@ class PetSpriteNode: SKSpriteNode {
     }
     
     private func updateWindPhysics(deltaTime: TimeInterval) {
-        let windForce = CGPoint(x: 100, y: 20) // 风向
-        let gravity: CGFloat = -500
+        guard let parent = parent else { return }
         
-        petVelocity.x += windForce.x * CGFloat(deltaTime)
-        petVelocity.y += (windForce.y + gravity) * CGFloat(deltaTime)
+        // 1. 累加时间
+        flightTime += deltaTime
         
+        // 2. 计算 X 轴的复合正弦波速度 (S型曲线的核心)
+        // 第一层波：大摆动 (决定整体走势)
+        let slowWave = sin(flightTime * windFrequencySlow + windPhaseOffset)
+        // 第二层波：小抖动 (增加不规则感)
+        let fastWave = sin(flightTime * windFrequencyFast) * 0.3
+        
+        // 合成 X 轴速度
+        // 加上一个微小的随机扰动，防止轨迹完全由于数学公式而显得太死板
+        let noise = CGFloat.random(in: -20...20)
+        petVelocity.x = (CGFloat(slowWave + fastWave) * windAmplitude) + noise
+        
+        // 3. 计算 Y 轴速度 (上升 + 浮动)
+        // 并不是匀速上升，而是忽快忽慢
+        let liftVariation = sin(flightTime * 3.0) * 30 // 上下的起伏感
+        petVelocity.y = verticalLiftSpeed + CGFloat(liftVariation)
+        
+        // 4. 应用位移
         position.x += petVelocity.x * CGFloat(deltaTime)
         position.y += petVelocity.y * CGFloat(deltaTime)
         
-        // 模拟更混乱的碰撞
-        if handleWallBounce() {
-            // 如果撞墙了，有概率挂在墙上
-            if Bool.random() {
-                trySwitchState(to: .environment(.stuckOnEdge), force: true)
+        // 5. 旋转效果 (随风摆动)
+        // 身体根据 X 轴速度倾斜，模仿空气动力学
+        // 限制最大旋转角度在 -45度 到 45度 之间
+        let targetRotation = -petVelocity.x * 0.002
+        let maxRotation = CGFloat.pi / 4
+        zRotation = targetRotation.clamped(to: -maxRotation...maxRotation)
+        
+        // 6. 边界与挂墙检测 (保持之前的逻辑)
+        checkStuckOnEdge(parentFrame: parent.frame)
+    }
+    
+    // MARK: - 4. 检测挂墙 (Stuck Check)
+    
+    private func checkStuckOnEdge(parentFrame: CGRect) {
+        let halfW = size.width / 2
+        let halfH = size.height / 2
+        
+        // 定义挂住的阈值：屏幕高度的 50% 以上
+        // 你可以根据需要调整这个比例，比如 0.3 (70%以上) 或 0.5 (一半以上)
+        let stickHeightThreshold = parentFrame.height * 0.5
+        
+        var isStuck = false
+        var stuckPos = position
+        
+        // --- 1. 左侧检测 ---
+        if position.x - halfW <= 0 {
+            // 物理限制：不管有没有挂住，都不能飞出屏幕左边
+            position.x = halfW
+            
+            // 只有高度足够，才判定为“挂住”
+            if position.y > stickHeightThreshold {
+                stuckPos.x = halfW
+                isStuck = true
+            } else {
+                // 如果高度不够，只是碰壁。
+                // 此时可以让它向右反弹一下，防止一直蹭墙
+                // 也可以什么都不做，让正弦波风力自己把它带离
+                if petVelocity.x < 0 {
+                    petVelocity.x = abs(petVelocity.x) * 0.5 // 简单的反弹
+                }
             }
         }
         
-        // 地面碰撞
-        if position.y <= size.height/2 {
-            position.y = size.height/2
-            petVelocity.y = abs(petVelocity.y) * 0.5 // 弹性地面
+        // --- 2. 右侧检测 ---
+        else if position.x + halfW >= parentFrame.width {
+            // 物理限制
+            position.x = parentFrame.width - halfW
+            
+            // 高度判断
+            if position.y > stickHeightThreshold {
+                stuckPos.x = parentFrame.width - halfW
+                isStuck = true
+            } else {
+                // 低空碰壁反弹
+                if petVelocity.x > 0 {
+                    petVelocity.x = -abs(petVelocity.x) * 0.5
+                }
+            }
         }
+        
+        // --- 3. 顶部检测 (天花板) ---
+        // 碰到顶肯定挂住，不管左右
+        else if position.y + halfH >= parentFrame.height {
+            stuckPos.y = parentFrame.height - halfH
+            isStuck = true
+        }
+        
+        // --- 4. 状态切换执行 ---
+        if isStuck {
+            // 修正最终吸附位置
+            position = stuckPos
+            
+            // 恢复身体旋转 (挂住时要正过来，或者你可以保持一点倾斜看起来像挂歪了)
+            zRotation = 0
+            
+            // 触发状态切换
+            trySwitchState(to: .environment(.stuckOnEdge), force: true)
+        }
+    }
+    
+    // MARK: - 5. 解救逻辑 (点击事件)
+    
+    // 确保你的 handleMouseDown 或 updateWindowInteraction 调用了这个逻辑
+    // 建议在 PetSpriteNode 中添加一个处理点击的方法
+    
+    func tryRescue() -> Bool {
+        if case .environment(.stuckOnEdge) = currentState {
+            // 点击了解救 -> 切换到下落
+            trySwitchState(to: .environment(.falling), force: true)
+            return true
+        }
+        return false
     }
     
     @discardableResult
@@ -282,16 +421,21 @@ class PetSpriteNode: SKSpriteNode {
     }
     
     private func updateDirection() {
-        // 根据速度方向调整贴图朝向
+        // 如果是被风吹状态，不要频繁翻转，或者只根据大趋势翻转
+        if case .environment(.blownByWind) = currentState {
+            // 只有当速度很大时才翻转，避免在 0 附近抖动
+            if abs(petVelocity.x) > 50 {
+                 xScale = (petVelocity.x > 0) ? abs(xScale) : -abs(xScale)
+                 // 记得气泡也要反转
+                 // bubbleNode.xScale = ...
+            }
+            return
+        }
+
+        // 原有的走路翻转逻辑
         let speed = (currentState == .daily(.walking)) ? petHorizontalSpeed : petVelocity.x
         if speed != 0 {
-            // 宠物翻转
             xScale = (speed > 0) ? abs(xScale) : -abs(xScale)
-            
-            // 【关键】气泡要反向翻转，不然文字会变成镜像
-            // 如果宠物是 -1 (朝左)，气泡设为 -1 抵消翻转
-            // 注意：因为气泡是子节点，父节点翻转子节点也会翻转，所以我们要让子节点的 xScale 为负
-            bubbleNode.xScale = (xScale < 0) ? -1 : 1
         }
     }
 

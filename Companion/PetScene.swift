@@ -32,7 +32,8 @@ class PetScene: SKScene {
         
         // 延迟 2 秒后自动触发一次，测试效果
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.triggerHourlyChime()
+//            self?.triggerHourlyChime()
+            self?.triggerWindyWeather()
         }
 
     }
@@ -139,11 +140,23 @@ class PetScene: SKScene {
     override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
         
-        // 寻找被点击的宠物 (倒序遍历，优先处理最上层的)
+        // 倒序遍历，优先点上面的
         for pet in pets.reversed() {
-            if pet.contains(location) && pet.currentState.canInteract {
-                startDrag(pet: pet, location: location)
-                return // 只拖动一个
+            if pet.contains(location) {
+                
+                // 1. 优先尝试解救
+                if pet.tryRescue() {
+                    // 播放一个音效或反馈
+                    // run(SKAction.playSoundFileNamed("rescue.wav", waitForCompletion: false))
+                    print("🎉 成功解救宠物！")
+                    return
+                }
+                
+                // 2. 如果不是解救，再检查是否可交互并开始拖拽
+                if pet.currentState.canInteract {
+                    startDrag(pet: pet, location: location)
+                    return
+                }
             }
         }
     }
