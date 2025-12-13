@@ -1,0 +1,9 @@
+/* 
+  Localizable.strings
+  Companion
+
+  Created by it on 2025/12/13.
+  
+*/
+"CFBundleDisplayName" = "Cozy Pals";
+"common_exit" = "退出应用";

@@ -42,7 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "退出应用", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: NSLocalizedString("common_exit", comment: "退出登录"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         menu.addItem(NSMenuItem(title: "整点报时", action: #selector(timeCheme), keyEquivalent: "t"))
         statusItem?.menu = menu
     }

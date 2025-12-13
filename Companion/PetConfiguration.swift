@@ -86,11 +86,11 @@ class BasePetConfiguration: PetConfiguration {
         switch state {
         case .daily(let s):
             switch s {
-            case .idle:     return 10...20   // 发呆时间
+            case .idle:     return 5...8   // 发呆时间
             case .walking:  return 30...50  // 走路时间
             case .sitting:  return 15...30  // 坐着时间
             case .sleeping: return 50...80 // 睡觉时间长一点
-            case .eating:   return 5...8
+            case .eating:   return 8...15
             }
             
         case .play(let s):
