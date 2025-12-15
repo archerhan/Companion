@@ -21,6 +21,11 @@ class PetScene: SKScene {
     
     private var waterTimer: Timer?
     
+    // MARK: - 番茄钟属性
+    private var focusTimer: Timer?
+    private var focusEndTime: Date?
+    private var isFocusing: Bool = false
+    
     // MARK: - 生命周期
     
     override func didMove(to view: SKView) {
@@ -33,6 +38,26 @@ class PetScene: SKScene {
         lastChimeHour = Calendar.current.component(.hour, from: Date())
         
         startWaterReminderTimer()
+    }
+    
+    // MARK: - 鼠标右键事件 (结束专注)
+    
+    override func rightMouseDown(with event: NSEvent) {
+        let location = event.location(in: self)
+        
+        // 检查点击到了哪个宠物
+        for pet in pets {
+            if pet.contains(location) {
+                // 如果这个宠物处于专注模式
+                if case .system(.focusMode) = pet.currentState {
+                    showFocusMenu(for: pet, event: event)
+                    return
+                }
+            }
+        }
+        
+        // 如果没有点中宠物，或者宠物没在专注，可以处理其他逻辑
+        super.rightMouseDown(with: event)
     }
     
     // 3. 实现定时器逻辑
@@ -62,6 +87,111 @@ class PetScene: SKScene {
         pet.removeFromParent()
         if let index = pets.firstIndex(of: pet) {
             pets.remove(at: index)
+        }
+    }
+    
+    private func showFocusMenu(for pet: PetSpriteNode, event: NSEvent) {
+        let menu = NSMenu(title: "Pet Menu")
+        
+        // 显示剩余时间
+        if let endTime = focusEndTime {
+            let remaining = endTime.timeIntervalSinceNow
+            let minutes = Int(remaining) / 60
+            let title = remaining > 0 ? "专注中... (剩余 \(minutes)分钟)" : "专注中..."
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // 结束按钮
+        let stopItem = NSMenuItem(title: "结束专注", action: #selector(stopFocusFromMenu), keyEquivalent: "")
+        stopItem.target = self
+        // 可以把 pet 存到 representedObject 里传过去
+        stopItem.representedObject = pet
+        menu.addItem(stopItem)
+        
+        // 弹出菜单
+        NSMenu.popUpContextMenu(menu, with: event, for: self.view!)
+    }
+    
+    @objc private func stopFocusFromMenu(_ sender: NSMenuItem) {
+        // 提前结束
+        stopPomodoro()
+    }
+    
+    // MARK: - 番茄钟控制逻辑
+    
+    /// 开始番茄钟 (由 AppDelegate 菜单或外部调用)
+    func startPomodoro(durationMinutes: Double = 25) {
+        if isFocusing {
+            print("⚠️ 已经在专注状态中，忽略本次请求")
+            return
+        }
+        print("⏰ 开始番茄钟: \(durationMinutes)分钟")
+        
+        isFocusing = true
+        focusEndTime = Date().addingTimeInterval(durationMinutes * 60)
+        
+        // 1. 让所有宠物进入专注准备状态 (或者只让第一只)
+        for pet in pets {
+            // 【新增】设置宠物的内部标记
+            pet.isPomodoroActive = true
+            pet.startFocusMode()
+        }
+        
+        // 2. 启动计时器
+        focusTimer?.invalidate()
+        focusTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            self?.checkFocusStatus()
+        }
+        // 3. 立即触发一次状态检查，以便马上显示气泡，不用等1秒
+        checkFocusStatus()
+    }
+    
+    private func checkFocusStatus() {
+        guard let endTime = focusEndTime else { return }
+        
+        let remaining = endTime.timeIntervalSinceNow
+        
+        // 时间到
+        if remaining <= 0 {
+            stopPomodoro()
+            NSSound(named: "Glass")?.play()
+            return
+        }
+        
+        // 【新增需求 2】计算 mm:ss 格式并更新气泡
+        let minutes = Int(remaining) / 60
+        let seconds = Int(remaining) % 60
+        let timeString = String(format: "%02d:%02d", minutes, seconds)
+        
+        for pet in pets {
+            pet.updateFocusTimerBubble(text: timeString)
+        }
+    }
+    
+    /// 结束番茄钟
+    func stopPomodoro() {
+        print("⏰ 番茄钟结束")
+        
+        isFocusing = false
+        focusTimer?.invalidate()
+        focusTimer = nil
+        focusEndTime = nil
+        
+        // 恢复宠物状态
+        for pet in pets {
+            pet.isPomodoroActive = false 
+            // 只有当宠物真的在专注时才重置它 (防止它在中途被别的事打断了)
+            // 或者强制重置也行
+             if case .system(.focusMode) = pet.currentState {
+                 pet.endFocusMode()
+             }
+             // 如果它还在走过去的路上 (walkingToFocus)，也该取消
+             // 这一步需要在 PetSpriteNode 里处理，简单起见，调用 endFocusMode 即可
+             pet.endFocusMode()
         }
     }
     
@@ -155,6 +285,13 @@ class PetScene: SKScene {
                     // 播放一个音效或反馈
                     // run(SKAction.playSoundFileNamed("rescue.wav", waitForCompletion: false))
                     print("🎉 成功解救宠物！")
+                    return
+                }
+                
+                // 【新增】如果是专注模式，直接返回，禁止拖拽
+                // 因为 canInteract 现在是 true，所以这里需要手动拦截
+                if case .system(.focusMode) = pet.currentState {
+                    // 可以加个摇头动画或者提示“专注中”
                     return
                 }
                 
@@ -293,6 +430,8 @@ class PetScene: SKScene {
     override func willMove(from view: SKView) {
         waterTimer?.invalidate()
         waterTimer = nil
+        
+        focusTimer?.invalidate()
     }
 }
 

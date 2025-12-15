@@ -59,6 +59,10 @@ enum PetState: Equatable {
     /// 是否可交互 (鼠标是否能点)
     var canInteract: Bool {
         switch self {
+        case .system(let s):
+             // 专注模式下，鼠标左键不能拖拽/点击
+             if s == .focusMode { return true }
+             return true
         case .interrupt: return false
         case .environment(let s):
             // 风吹时不可点击，挂住时可以点击解救，拖拽时肯定算交互中

@@ -42,6 +42,12 @@ class PetSpriteNode: SKSpriteNode {
     // 记录拖拽时的方向 (默认向右 1.0)
     private var currentDragDirection: CGFloat = 1.0
     
+    // MARK: - 专注模式专用属性
+    private var isWalkingToFocusLocation: Bool = false
+    private var focusTargetLocation: CGPoint?
+    // 【新增】标记：是否处于番茄钟时间段内
+    var isPomodoroActive: Bool = false
+    
     
     // MARK: - 初始化
     init(configuration: PetConfiguration) {
@@ -85,6 +91,15 @@ class PetSpriteNode: SKSpriteNode {
             return false
         }
         
+        // 【关键修复 1】如果切换到了 Environment (风吹/挂墙)，必须立即打断“去专注的路上”
+        // 否则 update 里会一直执行寻路逻辑，导致风吹不动
+        if case .environment = newState {
+            isWalkingToFocusLocation = false
+            focusTargetLocation = nil
+            // 恢复重力 (因为 updateWalkingToFocus 可能会接管重力，这里重置一下保险)
+            self.physicsBody?.affectedByGravity = false
+        }
+        
         // 3. 执行切换
         previousState = currentState
         currentState = newState
@@ -96,103 +111,126 @@ class PetSpriteNode: SKSpriteNode {
     }
     
     private func handleStateEnter(_ state: PetState) {
-            // 1. 播放对应动画
-            playAnimation(state.animation, loop: state.isLooping)
-            
-            // 2. 根据状态重置一些物理参数 (这部分保留你写的逻辑)
-            switch state {
-            case .environment(.falling):
-                zRotation = .zero
-                if previousState == .environment(.stuckOnEdge) {
-                    petVelocity = CGPoint(x: 0, y: 0)
-                }
-                
-            case .environment(.blownByWind):
-                flightTime = 0
-                windPhaseOffset = Double.random(in: 0...(2 * .pi))
-                windFrequencySlow = Double.random(in: 1.0...2.0)
-                windFrequencyFast = Double.random(in: 3.0...5.0)
-                windAmplitude = CGFloat.random(in: 300...500)
-                verticalLiftSpeed = CGFloat.random(in: 50...100)
-                petVelocity = CGPoint(x: 0, y: verticalLiftSpeed)
-                self.physicsBody?.affectedByGravity = false
-                
-            case .environment(.stuckOnEdge):
-                petVelocity = .zero
-                
-            case .daily(.walking):
-                if petHorizontalSpeed == 0 {
-                    let randomDir: CGFloat = Bool.random() ? 1.0 : -1.0
-                    petHorizontalSpeed = 30 * randomDir
-                }
-                updateDirection()
-                
-            default:
-                break
+        // 1. 播放对应动画
+        playAnimation(state.animation, loop: state.isLooping)
+        
+        // 2. 根据状态重置一些物理参数 (这部分保留你写的逻辑)
+        switch state {
+        case .environment(.falling):
+            zRotation = .zero
+            if previousState == .environment(.stuckOnEdge) {
+                petVelocity = CGPoint(x: 0, y: 0)
             }
             
-            // 3. 气泡逻辑
-            if case .interrupt(.hourlyChime) = state {
-                showTimeBubble()
-            } else if case .interrupt(.waterReminder) = state {
-                showWaterBubble()
-            } else {
-                bubbleNode.hide()
+        case .environment(.blownByWind):
+            flightTime = 0
+            windPhaseOffset = Double.random(in: 0...(2 * .pi))
+            windFrequencySlow = Double.random(in: 1.0...2.0)
+            windFrequencyFast = Double.random(in: 3.0...5.0)
+            windAmplitude = CGFloat.random(in: 300...500)
+            verticalLiftSpeed = CGFloat.random(in: 50...100)
+            petVelocity = CGPoint(x: 0, y: verticalLiftSpeed)
+            self.physicsBody?.affectedByGravity = false
+            
+        case .environment(.stuckOnEdge):
+            petVelocity = .zero
+            
+        case .daily(.walking):
+            if petHorizontalSpeed == 0 {
+                let randomDir: CGFloat = Bool.random() ? 1.0 : -1.0
+                petHorizontalSpeed = 30 * randomDir
             }
+            updateDirection()
             
-            // 4. 获取配置时长 (用于 AI 随机 或 自动退出)
-            let range = configuration.durationRange(for: state)
-            let duration = TimeInterval.random(in: range)
+        default:
+            break
+        }
+        
+        // 3. 气泡逻辑
+        if case .interrupt(.hourlyChime) = state {
+            showTimeBubble()
+        } else if case .interrupt(.waterReminder) = state {
+            showWaterBubble()
+        } else {
+            bubbleNode.hide()
+        }
+        
+        // 4. 获取配置时长 (用于 AI 随机 或 自动退出)
+        let range = configuration.durationRange(for: state)
+        let duration = TimeInterval.random(in: range)
+        
+        // 更新 AI 计时器 (这个只对 priority=0 的 Daily 状态生效，其他状态 UpdateAI 会直接 return，所以这里赋值没副作用)
+        timeUntilNextRandomAction = duration
+        
+        // ------------------------------------------------------------------
+        // 【核心修复】 显式区分哪些状态需要“时间到了自动退出”，哪些绝对不能自动退出
+        // 不要再用 state.priority >= 100 来判断了！
+        // ------------------------------------------------------------------
+        
+        switch state {
             
-            // 更新 AI 计时器 (这个只对 priority=0 的 Daily 状态生效，其他状态 UpdateAI 会直接 return，所以这里赋值没副作用)
-            timeUntilNextRandomAction = duration
-            
-            // ------------------------------------------------------------------
-            // 【核心修复】 显式区分哪些状态需要“时间到了自动退出”，哪些绝对不能自动退出
-            // 不要再用 state.priority >= 100 来判断了！
-            // ------------------------------------------------------------------
-            
-            switch state {
+        case .interrupt:
+            // 【必须退出】：喝水、报时
+            let wait = SKAction.wait(forDuration: duration)
+            let exit = SKAction.run { [weak self] in
+                guard let self = self else { return }
                 
-            case .interrupt:
-                // 【必须退出】：喝水、报时
-                // 这些是临时状态，播放完配置的 duration (比如10秒) 后必须强制切回 Idle
+                // 【修复 3】退出中断时的分流逻辑
+                if self.isPomodoroActive {
+                    // 如果番茄钟还没结束，直接重新尝试进入专注
+                    // 由于上面修复了 startFocusMode，如果它就在原地，会直接切回 Focus，不会闪 Walk 动画
+                    self.startFocusMode()
+                } else {
+                    // 否则才切回 Idle 发呆
+                    self.trySwitchState(to: .daily(.idle), force: true)
+                }
+            }
+            run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
+            
+        case .system(let s):
+            // 【选择性退出】：系统状态
+            // 烦躁/低电量可以设定一段时间后恢复，但专注模式通常不自动恢复
+            if s == .highCPU || s == .lowBattery {
                 let wait = SKAction.wait(forDuration: duration)
                 let exit = SKAction.run { [weak self] in
                     self?.trySwitchState(to: .daily(.idle), force: true)
                 }
-                // 设置 Key 以便状态提前改变时能取消它
                 run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
-                
-            case .system(let s):
-                // 【选择性退出】：系统状态
-                // 烦躁/低电量可以设定一段时间后恢复，但专注模式通常不自动恢复
-                if s == .highCPU || s == .lowBattery {
-                    let wait = SKAction.wait(forDuration: duration)
-                    let exit = SKAction.run { [weak self] in
-                        self?.trySwitchState(to: .daily(.idle), force: true)
-                    }
-                    run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
-                } else {
-                    removeAction(forKey: "AutoExitState")
-                }
-                
-            case .environment:
-                // 【绝对禁止自动退出】：风吹、拖拽、挂墙、下落
-                // 这些由物理逻辑（handleStateEnter 顶部的代码 或 updatePhysics）控制结束。
-                // 无论配置里的 duration 是多少，都要移除倒计时！
-                removeAction(forKey: "AutoExitState")
-                
-            case .daily, .play:
-                // 【不强制退出】：日常
-                // 由 updateAI() 轮询来决定下一个动作
+            } else {
                 removeAction(forKey: "AutoExitState")
             }
+            
+        case .environment:
+            // 【绝对禁止自动退出】：风吹、拖拽、挂墙、下落
+            // 这些由物理逻辑（handleStateEnter 顶部的代码 或 updatePhysics）控制结束。
+            // 无论配置里的 duration 是多少，都要移除倒计时！
+            removeAction(forKey: "AutoExitState")
+            
+        case .daily, .play:
+            // 【不强制退出】：日常
+            // 由 updateAI() 轮询来决定下一个动作
+            removeAction(forKey: "AutoExitState")
+        }
+        // 【关键修复 2】如果番茄钟是激活的，且宠物闲下来了，这就意味着它可能刚从风吹/挂墙中恢复
+        // 此时应该重新命令它去专注
+        if isPomodoroActive {
+            // 只有当进入 Daily 状态时才检查 (避免死循环或打断 System/Interrupt)
+            if case .daily = state {
+                // 延迟一点点执行，避免状态切换冲突，也让它喘口气
+                let wait = SKAction.wait(forDuration: 1.0)
+                let goFocus = SKAction.run { [weak self] in
+                    // 再次检查 (防止1秒后番茄钟已经关了)
+                    guard let self = self, self.isPomodoroActive else { return }
+                    self.startFocusMode()
+                }
+                run(SKAction.sequence([wait, goFocus]))
+            }
+        }
             
     #if DEBUG
             print("状态: \(state) | 持续: \(String(format: "%.1f", duration))s")
     #endif
-        }
+    }
     
     // MARK: - 报时具体实现
     
@@ -234,11 +272,24 @@ class PetSpriteNode: SKSpriteNode {
     // MARK: - Update Loop (每帧调用)
     
     func update(deltaTime: TimeInterval) {
-        // 1. 物理更新 (Movement)
-        updatePhysics(deltaTime: deltaTime)
         
-        // 2. 逻辑更新 (AI Decision)
-        updateAI(deltaTime: deltaTime)
+        // 只有在“非 Environment”状态下，才允许执行“走向专注点”的逻辑。
+        // 如果当前是风吹(Environment)，必须强制运行 updatePhysics(Environment逻辑)
+        
+        let isEnvironment = (currentState.priority == 100) // 100 是 Environment
+        
+        if isWalkingToFocusLocation && !isEnvironment {
+            updateWalkingToFocus(deltaTime: deltaTime)
+        } else {
+            updatePhysics(deltaTime: deltaTime)
+        }
+        
+        // AI 更新
+        if isWalkingToFocusLocation || currentState == .system(.focusMode) || isEnvironment {
+            // 专注路上、专注中、被风吹中，都不执行随机 AI
+        } else {
+            updateAI(deltaTime: deltaTime)
+        }
     }
     
     // 分离出的物理层：只管位置，不管状态怎么变
@@ -298,6 +349,128 @@ class PetSpriteNode: SKSpriteNode {
             petHorizontalSpeed *= -1
             updateDirection()
         }
+    }
+    
+    private func updateWalkingToFocus(deltaTime: TimeInterval) {
+        guard let target = focusTargetLocation else { return }
+        
+        // 1. 简单的物理下落 (如果还在空中的话)
+        if position.y > size.height/2 + 2 { // 加一点容差
+            let gravity: CGFloat = -1500
+            petVelocity.y += gravity * CGFloat(deltaTime)
+            position.y += petVelocity.y * CGFloat(deltaTime)
+            
+            // 地面检测
+            if position.y <= size.height/2 {
+                position.y = size.height/2
+                petVelocity.y = 0
+                // 落地了，开始走
+                playAnimation(.walk)
+            } else {
+                // 还在空中，播放下落动作
+                playAnimation(.drag)
+                return // 空中无法水平移动
+            }
+        }
+        
+        // 2. 水平移动逻辑
+        let distance = target.x - position.x
+        
+        // 到达判定 (距离小于 10 像素)
+        if abs(distance) < 10 {
+            // 到达目的地！
+            isWalkingToFocusLocation = false
+            focusTargetLocation = nil
+            petVelocity = .zero
+            
+            // 正式进入专注状态
+            // 强制切换，且不带时间限制(由外部Timer控制)
+            trySwitchState(to: .system(.focusMode), force: true)
+            // 确保朝向正面
+            playAnimation(.front) // 或 reading
+            
+        } else {
+            // 继续走
+            let direction: CGFloat = distance > 0 ? 1.0 : -1.0
+            
+            // 设置速度 (稍微快一点去上班)
+            let walkSpeed: CGFloat = 60.0
+            position.x += walkSpeed * direction * CGFloat(deltaTime)
+            
+            // 确保朝向正确
+            if xScale * direction < 0 {
+                xScale = abs(xScale) * direction
+                // 气泡修正逻辑同前
+                bubbleNode.xScale = (xScale < 0) ? -1 : 1
+            }
+            
+            // 确保动画是走路
+            playAnimation(.walk)
+        }
+    }
+    
+    // MARK: - 外部接口：开始专注
+    
+    func startFocusMode() {
+        // 如果当前是环境状态(被风吹)，不能直接去专注
+        if case .environment = currentState { return }
+        
+        guard let parent = parent else { return }
+        
+        // 计算目标点
+        let targetX = parent.frame.width - 50
+        let targetY = size.height / 2
+        focusTargetLocation = CGPoint(x: targetX, y: targetY)
+        
+        // 【修复 2】智能判断距离
+        // 如果当前位置已经在目标点附近 (容差 20 像素)，直接坐下专注，不要再 Walk 了
+        let distance = abs(targetX - position.x)
+        
+        if distance < 20 {
+            // 已经在位置上了：直接进入专注
+            isWalkingToFocusLocation = false
+            // 强制切换到 focusMode
+            trySwitchState(to: .system(.focusMode), force: true)
+            // 确保动画是坐着/看书
+            playAnimation(.front) // 或 .reading
+        } else {
+            // 距离远：才开始走
+            isWalkingToFocusLocation = true
+            trySwitchState(to: .daily(.walking), force: true)
+        }
+    }
+    
+    // 【新增】更新专注倒计时
+    func updateFocusTimerBubble(text: String) {
+        // 1. 如果当前处于高优先级的 Interrupt 状态，不更新
+        if case .interrupt = currentState {
+            return
+        }
+        
+        // 2. 只有在专注模式相关状态下才显示
+        if case .system(.focusMode) = currentState {
+            // 【修复 1】确保气泡位置在头顶 (与 show 方法一致)
+            bubbleNode.position = CGPoint(x: 0, y: size.height/2 + 15)
+            bubbleNode.updateText(text)
+        } else if isWalkingToFocusLocation {
+            // 路上也显示
+            bubbleNode.position = CGPoint(x: 0, y: size.height/2 + 15)
+            bubbleNode.updateText(text)
+        }
+    }
+    
+    // MARK: - 外部接口：结束专注
+    
+    func endFocusMode() {
+        // 清理标志位
+        isWalkingToFocusLocation = false
+        focusTargetLocation = nil
+        
+        // 恢复正常
+        trySwitchState(to: .daily(.idle), force: true)
+        
+        // 【优化】专注结束时，显示一句结束语（覆盖掉倒计时）
+        bubbleNode.show(text: "完成啦！🎉", at: CGPoint(x: 0, y: size.height/2 + 15))
     }
     
     private func updateGravity(deltaTime: TimeInterval) {

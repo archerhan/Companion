@@ -19,7 +19,7 @@ class BubbleNode: SKNode {
         
         // 初始化标签
         label = SKLabelNode(fontNamed: "Menlo-Bold")
-        label.fontSize = 12
+        label.fontSize = 18
         label.fontColor = .black
         label.verticalAlignmentMode = .center
         label.zPosition = 101
@@ -77,6 +77,25 @@ class BubbleNode: SKNode {
         
         self.run(fadeIn)
         contentNode.run(scaleUp)
+    }
+    
+    // 【新增】用于高频更新文字，不播放弹出动画
+    func updateText(_ text: String) {
+        label.text = text
+        
+        // 重绘背景 path
+        let padding: CGFloat = 8
+        let width = label.frame.width + padding * 2
+        let height = label.frame.height + padding * 2
+        let rect = CGRect(x: -width/2, y: -height/2, width: width, height: height)
+        background.path = CGPath(roundedRect: rect, cornerWidth: 8, cornerHeight: 8, transform: nil)
+        
+        // 确保显示
+        self.isHidden = false
+        self.alpha = 1.0
+        
+        // 【重要】这里不要修改 self.position，也不要 run SKAction
+        // 位置由 PetSpriteNode 控制，缩放由 show() 控制
     }
     
     func hide() {

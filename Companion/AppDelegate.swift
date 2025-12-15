@@ -52,6 +52,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem(title: "测试: 被风吹起", action: #selector(testWind), keyEquivalent: "w"))
         statusItem?.menu = menu
+        
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "开始专注 (25分钟)", action: #selector(startFocus), keyEquivalent: "f"))
+        statusItem?.menu = menu
     }
     
     @objc func testWater() {
@@ -76,6 +80,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let scene = view.scene as? PetScene else { return }
         
         scene.triggerWindyWeather()
+    }
+    
+    @objc func startFocus() {
+        guard let window = NSApplication.shared.windows.first,
+              let view = window.contentView as? SKView,
+              let scene = view.scene as? PetScene else { return }
+        
+        scene.startPomodoro(durationMinutes: 25)
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
