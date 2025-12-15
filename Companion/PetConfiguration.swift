@@ -44,6 +44,11 @@ protocol PetConfiguration {
     /// (通常只包含 Daily 状态，不包含被风吹、拖拽等被动状态)
     var capableRandomStates: [PetState] { get }
     
+    /// 原始素材的朝向是否是朝右的？
+    /// 如果你的图片里猫是看向右边的，设为 true。
+    /// 如果你的图片里猫是看向左边的，设为 false。
+    var isTextureFacingRight: Bool { get }
+    
     /// 获取状态持续时间
     /// - Parameter state: 目标状态
     /// - Returns: 时间范围 (例如 5...10 秒)
@@ -58,6 +63,8 @@ class BasePetConfiguration: PetConfiguration {
     let textureAtlasName: String
     let defaultSize: CGSize
     let walkSpeedRange: ClosedRange<CGFloat>
+    // 默认设为 true (大多数素材习惯朝右)，如果是朝左的请在子类重写
+    var isTextureFacingRight: Bool { return true }
     
     init(petType: PetType,
          baseName: String,
@@ -122,6 +129,11 @@ class BasePetConfiguration: PetConfiguration {
 
 // --- 黑猫配置 ---
 final class CatBlackConfiguration: BasePetConfiguration {
+    
+    // 如果你的猫从右向左走是倒着的，说明素材可能是朝左的，或者翻转逻辑反了
+    // 尝试把这个值改为 false 看看效果
+    override var isTextureFacingRight: Bool { return true }
+    
     init() {
         super.init(
             petType: .catBlack,

@@ -37,6 +37,11 @@ class PetSpriteNode: SKSpriteNode {
     private var windAmplitude: CGFloat = 0       // 波的幅度 (弯拐多大)
     private var verticalLiftSpeed: CGFloat = 0   // 上升速度
     
+    // 添加一个变量暂存拖拽时的方向
+    private var dragDirection: CGFloat = 0
+    // 记录拖拽时的方向 (默认向右 1.0)
+    private var currentDragDirection: CGFloat = 1.0
+    
     
     // MARK: - 初始化
     init(configuration: PetConfiguration) {
@@ -97,6 +102,7 @@ class PetSpriteNode: SKSpriteNode {
         // 根据状态重置一些物理参数
         switch state {
         case .environment(.falling):
+            zRotation = .zero
             // 如果是从挂住状态变成下落，给个微小的反弹速度
             if previousState == .environment(.stuckOnEdge) {
                 petVelocity = CGPoint(x: 0, y: 0) // 直接垂直下落
@@ -129,8 +135,14 @@ class PetSpriteNode: SKSpriteNode {
             // 挂住时速度清零
             petVelocity = .zero
         case .daily(.walking):
-            // 确保有速度
-            if petHorizontalSpeed == 0 { petHorizontalSpeed = 30 }
+            // 确保有速度，但不要改变方向！
+            if petHorizontalSpeed == 0 {
+                // 只有速度完全为0时才给个默认值
+                // 并且最好随机方向，或者保持 currentDragDirection
+                let randomDir: CGFloat = Bool.random() ? 1.0 : -1.0
+                petHorizontalSpeed = 30 * randomDir
+            }
+            updateDirection()
         default:
             break
         }
@@ -261,22 +273,29 @@ class PetSpriteNode: SKSpriteNode {
     }
     
     private func updateGravity(deltaTime: TimeInterval) {
-        let gravity: CGFloat = -800 // 像素/秒平方
+        // ... 前面的重力代码保持不变 ...
+        let gravity: CGFloat = -1500
         petVelocity.y += gravity * CGFloat(deltaTime)
-        
         position.x += petVelocity.x * CGFloat(deltaTime)
         position.y += petVelocity.y * CGFloat(deltaTime)
         
-        // 地面碰撞
+        // 地面碰撞检测
         let groundY: CGFloat = 0 + size.height/2
         if position.y <= groundY {
             position.y = groundY
+            
+            // 【新增逻辑】落地瞬间，顺势而为
+            // 如果落地时有明显的水平速度，就让宠物继续往那个方向走
+            if abs(petVelocity.x) > 10 {
+                let landingDir: CGFloat = petVelocity.x > 0 ? 1.0 : -1.0
+                petHorizontalSpeed = abs(petHorizontalSpeed) * landingDir
+            }
+            
             petVelocity = .zero
-            // 落地后回到 Idle
+            // 落地后切换回 Walking
             trySwitchState(to: .daily(.walking), force: true)
         }
         
-        // 墙壁反弹
         handleWallBounce()
     }
     
@@ -420,22 +439,51 @@ class PetSpriteNode: SKSpriteNode {
         return bounced
     }
     
+    // 提供给外部（PetScene）调用，用于更新拖拽方向
+    func updateDragFacing(deltaX: CGFloat) {
+        currentDragDirection = deltaX
+        updateDirection()
+    }
+    
     private func updateDirection() {
-        // 如果是被风吹状态，不要频繁翻转，或者只根据大趋势翻转
-        if case .environment(.blownByWind) = currentState {
-            // 只有当速度很大时才翻转，避免在 0 附近抖动
-            if abs(petVelocity.x) > 50 {
-                 xScale = (petVelocity.x > 0) ? abs(xScale) : -abs(xScale)
-                 // 记得气泡也要反转
-                 // bubbleNode.xScale = ...
-            }
-            return
+        // 1. 确定参考速度/方向
+        var targetDirection: CGFloat = 0
+        
+        // 根据状态决定参考谁
+        if case .environment(.beingDragged) = currentState {
+            // 【关键】拖拽时，完全听从鼠标的记录，忽略 petVelocity 或 petHorizontalSpeed
+            targetDirection = currentDragDirection
+        } else if case .daily(.walking) = currentState {
+            targetDirection = petHorizontalSpeed
+        } else if case .environment(.blownByWind) = currentState {
+            targetDirection = petVelocity.x
+        } else {
+            // 其他状态如果有速度也参考一下
+            if abs(petVelocity.x) > 0.1 { targetDirection = petVelocity.x }
         }
-
-        // 原有的走路翻转逻辑
-        let speed = (currentState == .daily(.walking)) ? petHorizontalSpeed : petVelocity.x
-        if speed != 0 {
-            xScale = (speed > 0) ? abs(xScale) : -abs(xScale)
+        
+        // 2. 如果方向不明确（静止），直接返回，保持上一次的朝向
+        guard abs(targetDirection) > 0.1 else { return }
+        
+        // 3. 计算翻转逻辑
+        // true = 目标向右，false = 目标向左
+        let shouldFaceRight = targetDirection > 0
+        
+        // 获取配置：你的素材原本是朝右的吗？
+        // 如果你的图原本朝右(true)，想让它朝左，就需要翻转(-1)
+        let isAssetFacingRight = configuration.isTextureFacingRight
+        
+        // 计算最终缩放系数
+        // 如果 (目标向右) 和 (素材向右) 一致 -> 1.0 (正常)
+        // 如果 (目标向右) 和 (素材向右) 不一致 -> -1.0 (翻转)
+        let multiplier: CGFloat = (shouldFaceRight == isAssetFacingRight) ? 1.0 : -1.0
+        
+        // 4. 应用缩放
+        let newXScale = abs(xScale) * multiplier
+        if xScale != newXScale {
+            xScale = newXScale
+            // 修正气泡朝向 (负负得正)
+            bubbleNode.xScale = (xScale < 0) ? -1 : 1
         }
     }
 
@@ -476,8 +524,8 @@ class PetSpriteNode: SKSpriteNode {
         guard let frames = animations[type], !frames.isEmpty else { return }
         
         // 移除旧动画（如果有 Key，其实 removeAction(forKey:) 更精准，但 removeAllActions 也行）
-        removeAllActions()
         currentAnimationType = type
+        removeAction(forKey: "anim")
         
         let animateAction = SKAction.animate(with: frames, timePerFrame: 0.12)
         
@@ -519,6 +567,21 @@ class PetSpriteNode: SKSpriteNode {
     
     func endDrag(velocity: CGPoint) {
         self.petVelocity = velocity
+        
+        let targetDirection: CGFloat
+        // 如果有明显的抛掷速度（>10），听抛掷的
+        if abs(velocity.x) > 10 {
+            targetDirection = velocity.x
+        } else {
+            // 如果只是慢慢放下，听刚才记录的拖拽方向
+            // 因为我们上面修复了 updateDragFacing，这里的 currentDragDirection 现在是准确的了
+            targetDirection = currentDragDirection
+        }
+        
+        // 更新行走速度方向
+        let directionSign: CGFloat = targetDirection > 0 ? 1.0 : -1.0
+        petHorizontalSpeed = abs(petHorizontalSpeed) * directionSign
+        
         trySwitchState(to: .environment(.falling), force: true)
     }
     

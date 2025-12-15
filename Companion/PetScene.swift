@@ -166,10 +166,18 @@ class PetScene: SKScene {
         
         let location = event.location(in: self)
         
-        // 更新宠物位置 (视觉跟随)
+        // 计算位移差：当前位置 - 上一次的位置
+        if let lastLoc = lastDragLocation {
+            let deltaX = location.x - lastLoc.x
+            
+            // 告诉宠物鼠标在往哪边动
+            pet.updateDragFacing(deltaX: deltaX)
+        }
+        
+        // 更新宠物位置
         pet.position = CGPoint(x: location.x - dragOffset.x, y: location.y - dragOffset.y)
         
-        // 记录数据用于计算抛掷速度
+        // 记录位置用于下一帧计算
         lastDragLocation = location
         lastDragTime = event.timestamp
     }
@@ -218,11 +226,20 @@ class PetScene: SKScene {
         lastDragLocation = nil
         dragOffset = .zero
         
-        // 通知宠物落地/飞出
+        // 【关键修复 1】
+        // 必须在调用 pet.endDrag 之前获取朝向！
+        // 因为 pet.endDrag 会改变状态，可能导致 xScale 发生变化（比如重置）
+        // 此时 pet 还在 beingDragged 状态，朝向是绝对正确的
+        let currentSign = pet.xScale > 0 ? 1.0 : -1.0
+        
+        // 1. 通知宠物落地/飞出
         pet.endDrag(velocity: velocity)
         
-        // 恢复缩放
-        pet.run(SKAction.scale(to: 1.0, duration: 0.1))
+        // 2. 恢复缩放
+        // 使用刚才保存的 currentSign，而不是现在去读 pet.xScale
+        let restoreScale = SKAction.scaleX(to: 1.0 * currentSign, y: 1.0, duration: 0.1)
+        
+        pet.run(restoreScale)
     }
     
     // MARK: - Debug / 外部控制接口

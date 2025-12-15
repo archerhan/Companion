@@ -75,12 +75,11 @@ enum PetState: Equatable {
         
         // 改为下面这样：
         case .interrupt(let s):
-            // 吃饭动作不循环（吃完就睡），但报时建议循环（一直看着你直到时间到）
             switch s {
             case .hourlyChime:
                 return true
             case .waterReminder:
-                return false
+                return true
             }
             
         default: return true
