@@ -19,6 +19,8 @@ class PetScene: SKScene {
     // 报时记录
     private var lastChimeHour: Int = -1
     
+    private var waterTimer: Timer?
+    
     // MARK: - 生命周期
     
     override func didMove(to view: SKView) {
@@ -30,12 +32,16 @@ class PetScene: SKScene {
         // 初始化上次报时为当前小时，防止打开软件瞬间触发
         lastChimeHour = Calendar.current.component(.hour, from: Date())
         
-        // 延迟 2 秒后自动触发一次，测试效果
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-//            self?.triggerHourlyChime()
-            self?.triggerWindyWeather()
+        startWaterReminderTimer()
+    }
+    
+    // 3. 实现定时器逻辑
+    func startWaterReminderTimer() {
+        // 示例：每 45 分钟 (45 * 60 = 2700秒) 提醒一次
+        // 为了测试方便，你可以暂时改成 30 秒 (interval: 30)
+        waterTimer = Timer.scheduledTimer(withTimeInterval: 2700, repeats: true) { [weak self] _ in
+            self?.triggerWaterReminder()
         }
-
     }
     
     // MARK: - 宠物管理
@@ -249,7 +255,27 @@ class PetScene: SKScene {
         print("🔔 触发整点报时")
         for pet in pets {
             // 使用 trySwitchState，因为 priority = 100，所以除了被拖拽外都会被打断
+            // 【新增】如果正在被风吹或挂住，不要报时
+            if case .environment = pet.currentState {
+                print("   - 宠物 \(pet.name ?? "") 正在忙(被风吹/挂住)，跳过提醒")
+                continue
+            }
             pet.trySwitchState(to: .interrupt(.hourlyChime))
+        }
+    }
+    
+    func triggerWaterReminder() {
+        print("🥤 触发喝水提醒")
+        for pet in pets {
+            // 使用 trySwitchState。
+            // 因为 priority = 100，它会打断 daily(0), play(10), system(50)。
+            // 但不会打断 environment(80, 如被拖拽/被风吹) -> 这符合逻辑，被拎着的时候没法喝水。
+            // 【新增】双重保险：如果宠物正处于环境/物理不可控状态，直接跳过
+            if case .environment = pet.currentState {
+                print("   - 宠物 \(pet.name ?? "") 正在忙(被风吹/挂住)，跳过提醒")
+                continue
+            }
+            pet.trySwitchState(to: .interrupt(.waterReminder))
         }
     }
     
@@ -261,6 +287,12 @@ class PetScene: SKScene {
     /// 测试：改变指定宠物的状态
     func debugChangeState(to state: PetState) {
         pets.first?.trySwitchState(to: state, force: true)
+    }
+    
+    // 4. 别忘了销毁
+    override func willMove(from view: SKView) {
+        waterTimer?.invalidate()
+        waterTimer = nil
     }
 }
 

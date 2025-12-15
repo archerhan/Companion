@@ -7,6 +7,7 @@
 
 
 import Cocoa
+import SpriteKit
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -43,12 +44,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: NSLocalizedString("common_exit", comment: "退出登录"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        menu.addItem(NSMenuItem(title: "整点报时", action: #selector(timeCheme), keyEquivalent: "t"))
+        menu.addItem(NSMenuItem(title: "测试: 整点报时", action: #selector(timeCheme), keyEquivalent: "t"))
+        statusItem?.menu = menu
+        
+        menu.addItem(NSMenuItem(title: "测试: 喝水提醒", action: #selector(testWater), keyEquivalent: "d"))
+        statusItem?.menu = menu
+        
+        menu.addItem(NSMenuItem(title: "测试: 被风吹起", action: #selector(testWind), keyEquivalent: "w"))
         statusItem?.menu = menu
     }
     
-    @objc func timeCheme() {
+    @objc func testWater() {
+        guard let window = NSApplication.shared.windows.first,
+              let view = window.contentView as? SKView,
+              let scene = view.scene as? PetScene else { return }
         
+        scene.triggerWaterReminder()
+    }
+    
+    @objc func timeCheme() {
+        guard let window = NSApplication.shared.windows.first,
+              let view = window.contentView as? SKView,
+              let scene = view.scene as? PetScene else { return }
+        
+        scene.triggerHourlyChime()
+    }
+    
+    @objc func testWind() {
+        guard let window = NSApplication.shared.windows.first,
+              let view = window.contentView as? SKView,
+              let scene = view.scene as? PetScene else { return }
+        
+        scene.triggerWindyWeather()
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {

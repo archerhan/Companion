@@ -118,7 +118,7 @@ class BasePetConfiguration: PetConfiguration {
             
         case .interrupt(let s):
             switch s {
-            case .waterReminder: return 3...3 // 气泡显示时间
+            case .waterReminder: return 10...10 // 气泡显示时间
             case .hourlyChime:   return 8...8
             }
         }

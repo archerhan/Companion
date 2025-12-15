@@ -96,89 +96,103 @@ class PetSpriteNode: SKSpriteNode {
     }
     
     private func handleStateEnter(_ state: PetState) {
-        // 播放对应动画
-        playAnimation(state.animation, loop: state.isLooping)
-        
-        // 根据状态重置一些物理参数
-        switch state {
-        case .environment(.falling):
-            zRotation = .zero
-            // 如果是从挂住状态变成下落，给个微小的反弹速度
-            if previousState == .environment(.stuckOnEdge) {
-                petVelocity = CGPoint(x: 0, y: 0) // 直接垂直下落
+            // 1. 播放对应动画
+            playAnimation(state.animation, loop: state.isLooping)
+            
+            // 2. 根据状态重置一些物理参数 (这部分保留你写的逻辑)
+            switch state {
+            case .environment(.falling):
+                zRotation = .zero
+                if previousState == .environment(.stuckOnEdge) {
+                    petVelocity = CGPoint(x: 0, y: 0)
+                }
+                
+            case .environment(.blownByWind):
+                flightTime = 0
+                windPhaseOffset = Double.random(in: 0...(2 * .pi))
+                windFrequencySlow = Double.random(in: 1.0...2.0)
+                windFrequencyFast = Double.random(in: 3.0...5.0)
+                windAmplitude = CGFloat.random(in: 300...500)
+                verticalLiftSpeed = CGFloat.random(in: 50...100)
+                petVelocity = CGPoint(x: 0, y: verticalLiftSpeed)
+                self.physicsBody?.affectedByGravity = false
+                
+            case .environment(.stuckOnEdge):
+                petVelocity = .zero
+                
+            case .daily(.walking):
+                if petHorizontalSpeed == 0 {
+                    let randomDir: CGFloat = Bool.random() ? 1.0 : -1.0
+                    petHorizontalSpeed = 30 * randomDir
+                }
+                updateDirection()
+                
+            default:
+                break
             }
-            break
-        case .environment(.blownByWind):
-            // 1. 重置飞行计时器
-            flightTime = 0
             
-            // 2. 随机生成“风的性格”
-            // 相位偏移：决定它一开始是先往左还是先往右
-            windPhaseOffset = Double.random(in: 0...(2 * .pi))
-            
-            // 频率：决定拐弯有多急
-            windFrequencySlow = Double.random(in: 1.0...2.0) // 1-2秒拐一个大弯
-            windFrequencyFast = Double.random(in: 3.0...5.0) // 细节抖动
-            
-            // 幅度：决定弯拐得有多宽 (像素速度)
-            windAmplitude = CGFloat.random(in: 300...500)
-            
-            // 上升速度：基础上升力
-            verticalLiftSpeed = CGFloat.random(in: 50...100)
-            
-            // 初始给一个向上的速度，防止刚开始掉下来
-            petVelocity = CGPoint(x: 0, y: verticalLiftSpeed)
-            
-            // 开启物理重力影响设为 false (因为我们要完全手动接管轨迹)
-            self.physicsBody?.affectedByGravity = false
-        case .environment(.stuckOnEdge):
-            // 挂住时速度清零
-            petVelocity = .zero
-        case .daily(.walking):
-            // 确保有速度，但不要改变方向！
-            if petHorizontalSpeed == 0 {
-                // 只有速度完全为0时才给个默认值
-                // 并且最好随机方向，或者保持 currentDragDirection
-                let randomDir: CGFloat = Bool.random() ? 1.0 : -1.0
-                petHorizontalSpeed = 30 * randomDir
+            // 3. 气泡逻辑
+            if case .interrupt(.hourlyChime) = state {
+                showTimeBubble()
+            } else if case .interrupt(.waterReminder) = state {
+                showWaterBubble()
+            } else {
+                bubbleNode.hide()
             }
-            updateDirection()
-        default:
-            break
-        }
-        
-        if case .interrupt(.hourlyChime) = state {
-            showTimeBubble()
-        } else {
-            // 如果切到了其他状态（比如走路），隐藏气泡
-            bubbleNode.hide()
-        }
-        
-        // 重置计时器
-        let range = configuration.durationRange(for: state)
-        let duration = TimeInterval.random(in: range)
-        
-        // 更新随机计时器（给低优先级状态用的）
-        timeUntilNextRandomAction = duration
-        
-        // 如果是高优先级状态（报时、提醒），AI 不会接管，必须手动安排退出
-        if state.priority >= 100 {
-            let wait = SKAction.wait(forDuration: duration)
-            let exit = SKAction.run { [weak self] in
-                // 时间到，强制切回 Idle
-                self?.trySwitchState(to: .daily(.idle), force: true)
+            
+            // 4. 获取配置时长 (用于 AI 随机 或 自动退出)
+            let range = configuration.durationRange(for: state)
+            let duration = TimeInterval.random(in: range)
+            
+            // 更新 AI 计时器 (这个只对 priority=0 的 Daily 状态生效，其他状态 UpdateAI 会直接 return，所以这里赋值没副作用)
+            timeUntilNextRandomAction = duration
+            
+            // ------------------------------------------------------------------
+            // 【核心修复】 显式区分哪些状态需要“时间到了自动退出”，哪些绝对不能自动退出
+            // 不要再用 state.priority >= 100 来判断了！
+            // ------------------------------------------------------------------
+            
+            switch state {
+                
+            case .interrupt:
+                // 【必须退出】：喝水、报时
+                // 这些是临时状态，播放完配置的 duration (比如10秒) 后必须强制切回 Idle
+                let wait = SKAction.wait(forDuration: duration)
+                let exit = SKAction.run { [weak self] in
+                    self?.trySwitchState(to: .daily(.idle), force: true)
+                }
+                // 设置 Key 以便状态提前改变时能取消它
+                run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
+                
+            case .system(let s):
+                // 【选择性退出】：系统状态
+                // 烦躁/低电量可以设定一段时间后恢复，但专注模式通常不自动恢复
+                if s == .highCPU || s == .lowBattery {
+                    let wait = SKAction.wait(forDuration: duration)
+                    let exit = SKAction.run { [weak self] in
+                        self?.trySwitchState(to: .daily(.idle), force: true)
+                    }
+                    run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
+                } else {
+                    removeAction(forKey: "AutoExitState")
+                }
+                
+            case .environment:
+                // 【绝对禁止自动退出】：风吹、拖拽、挂墙、下落
+                // 这些由物理逻辑（handleStateEnter 顶部的代码 或 updatePhysics）控制结束。
+                // 无论配置里的 duration 是多少，都要移除倒计时！
+                removeAction(forKey: "AutoExitState")
+                
+            case .daily, .play:
+                // 【不强制退出】：日常
+                // 由 updateAI() 轮询来决定下一个动作
+                removeAction(forKey: "AutoExitState")
             }
-            // 给这个动作加个 Key，防止状态提前改变时重复触发
-            run(SKAction.sequence([wait, exit]), withKey: "AutoExitState")
-        } else {
-            // 如果切到了普通状态，移除之前的自动退出倒计时（防止逻辑冲突）
-            removeAction(forKey: "AutoExitState")
+            
+    #if DEBUG
+            print("状态: \(state) | 持续: \(String(format: "%.1f", duration))s")
+    #endif
         }
-        
-#if DEBUG
-        print("状态: \(state) | 持续: \(String(format: "%.1f", duration))s")
-#endif
-    }
     
     // MARK: - 报时具体实现
     
@@ -200,6 +214,20 @@ class PetSpriteNode: SKSpriteNode {
         }
         
         // 显示在头顶 (假设宠物高度 64，气泡在 y=40 处)
+        bubbleNode.show(text: text, at: CGPoint(x: 0, y: size.height/2 + 15))
+    }
+    
+    // MARK: - 提醒喝水具体实现
+    private func showWaterBubble() {
+        let texts = [
+            "该喝水啦！🥤",
+            "补充水分时间！💧",
+            "咕嘟咕嘟...🚰",
+            "健康第一，喝水！🥛"
+        ]
+        // 随机选一句文案
+        let text = texts.randomElement() ?? "喝水啦！"
+        // 显示在头顶
         bubbleNode.show(text: text, at: CGPoint(x: 0, y: size.height/2 + 15))
     }
     
@@ -441,6 +469,7 @@ class PetSpriteNode: SKSpriteNode {
     
     // 提供给外部（PetScene）调用，用于更新拖拽方向
     func updateDragFacing(deltaX: CGFloat) {
+        guard deltaX != 0 else { return }
         currentDragDirection = deltaX
         updateDirection()
     }

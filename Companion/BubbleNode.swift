@@ -8,18 +8,23 @@
 import SpriteKit
 
 class BubbleNode: SKNode {
+    // 1. 新增一个容器节点，用于承载内容并执行缩放动画
+    private let contentNode: SKNode
     private let label: SKLabelNode
     private let background: SKShapeNode
     
     override init() {
-        // 1. 创建标签
-        label = SKLabelNode(fontNamed: "Menlo-Bold") // 或 "PingFang SC"
+        // 初始化容器
+        contentNode = SKNode()
+        
+        // 初始化标签
+        label = SKLabelNode(fontNamed: "Menlo-Bold")
         label.fontSize = 12
         label.fontColor = .black
         label.verticalAlignmentMode = .center
         label.zPosition = 101
         
-        // 2. 创建背景 (圆角矩形)
+        // 初始化背景
         background = SKShapeNode()
         background.fillColor = .white
         background.strokeColor = .black
@@ -28,8 +33,11 @@ class BubbleNode: SKNode {
         
         super.init()
         
-        addChild(background)
-        addChild(label)
+        // 2. 这里的层级关系变了：
+        // self -> contentNode -> (background, label)
+        addChild(contentNode)
+        contentNode.addChild(background)
+        contentNode.addChild(label)
         
         // 默认隐藏
         alpha = 0
@@ -39,10 +47,8 @@ class BubbleNode: SKNode {
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     
     func show(text: String, at point: CGPoint) {
-        // 更新文字
         label.text = text
         
-        // 根据文字大小动态调整背景
         let padding: CGFloat = 8
         let width = label.frame.width + padding * 2
         let height = label.frame.height + padding * 2
@@ -50,29 +56,36 @@ class BubbleNode: SKNode {
         
         background.path = CGPath(roundedRect: rect, cornerWidth: 8, cornerHeight: 8, transform: nil)
         
-        // 设置位置 (通常在头顶)
         self.position = point
         self.isHidden = false
         self.alpha = 0
-        self.setScale(0.5)
         
-        // 弹出动画
+        // 3. 【关键修改】
+        // 动画作用于 contentNode，而不是 self。
+        // 这样 self.xScale 可以保持为 -1 (用于抵消父节点的翻转)，
+        // 而 contentNode.xScale 可以从 0.5 变大到 1.0 (实现弹出效果)，互不冲突。
+        contentNode.setScale(0.5)
+        
         let fadeIn = SKAction.fadeIn(withDuration: 0.2)
+        // 这里的 scale(to: 1.0) 只会把 contentNode 变成 1.0，不会影响 self 的翻转
         let scaleUp = SKAction.scale(to: 1.0, duration: 0.2)
-        let group = SKAction.group([fadeIn, scaleUp])
+        _ = SKAction.group([fadeIn, scaleUp])
         
-        // 如果正在显示，先移除旧动作
+        // 移除旧动作并运行新动作 (注意是 contentNode 运行缩放，self 运行淡入)
         removeAllActions()
-        run(group)
+        contentNode.removeAllActions()
+        
+        self.run(fadeIn)
+        contentNode.run(scaleUp)
     }
     
     func hide() {
         let fadeOut = SKAction.fadeOut(withDuration: 0.2)
         let scaleDown = SKAction.scale(to: 0.5, duration: 0.2)
-        let group = SKAction.group([fadeOut, scaleDown])
         
-        run(group) {
+        self.run(fadeOut) {
             self.isHidden = true
         }
+        contentNode.run(scaleDown)
     }
 }

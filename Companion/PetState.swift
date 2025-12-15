@@ -8,10 +8,10 @@ enum PetState: Equatable {
     case play(PlayState)
     // 系统状态 (高优先级 - 很有用)
     case system(SystemState)
-    // 环境/不可控状态 (最高强制力)
-    case environment(EnvironmentState)
     // 临时打断 (最高优先级 - 提醒)
     case interrupt(InterruptState)
+    // 环境/不可控状态 (最高强制力)
+    case environment(EnvironmentState)
     
     // --- 子状态 ---
     enum DailyState: String, Equatable {
@@ -29,17 +29,19 @@ enum PetState: Equatable {
         case focusMode    // 专注/看书
     }
     
+    
+    enum InterruptState: String, Equatable {
+        case waterReminder  // 喝水提醒
+        case hourlyChime    // 报时
+    }
+    
     enum EnvironmentState: String, Equatable {
         case falling        // 下落
         case beingDragged   // 拖拽
         case blownByWind    // 被风吹
         case stuckOnEdge    // 挂在边缘
     }
-    
-    enum InterruptState: String, Equatable {
-        case waterReminder  // 喝水提醒
-        case hourlyChime    // 报时
-    }
+
     
     // MARK: - 核心逻辑属性 (这是状态机的灵魂)
     
@@ -49,14 +51,15 @@ enum PetState: Equatable {
         case .daily: return 0          // 随时可以被打断
         case .play: return 10          // 玩耍中不容易被打断，除非系统事件
         case .system: return 50        // 专注模式/高CPU，不应被闲逛打断
-        case .environment: return 80   // 风吹/拖拽，物理强制力
-        case .interrupt: return 100    // 喝水/报时，必须立即执行
+        case .interrupt: return 80    // 喝水/报时，必须立即执行
+        case .environment: return 100   // 风吹/拖拽，物理强制力
         }
     }
     
     /// 是否可交互 (鼠标是否能点)
     var canInteract: Bool {
         switch self {
+        case .interrupt: return false
         case .environment(let s):
             // 风吹时不可点击，挂住时可以点击解救，拖拽时肯定算交互中
             switch s {
@@ -64,7 +67,6 @@ enum PetState: Equatable {
             case .stuckOnEdge: return true
             default: return true
             }
-        case .interrupt: return false
         default: return true
         }
     }
@@ -107,15 +109,15 @@ enum PetState: Equatable {
             case .lowBattery: return .sleep // 复用 sleep 或做新动画
             case .focusMode: return .front  // 复用 front 或做看书动画
             }
+        case .interrupt(let s):
+            switch s {
+            case .waterReminder, .hourlyChime: return .front // 配合气泡
+            }
         case .environment(let s):
             switch s {
             case .falling, .beingDragged: return .drag
             case .blownByWind: return .drag // 风吹可以用 drag 动作（看起来像被拎起来）
             case .stuckOnEdge: return .drag // 挂在墙上也可以用 drag，或者专门的 hanging
-            }
-        case .interrupt(let s):
-            switch s {
-            case .waterReminder, .hourlyChime: return .front // 配合气泡
             }
         }
     }
