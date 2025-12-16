@@ -73,7 +73,7 @@ final class CatBlackConfiguration: BasePetConfiguration {
             petType: .catBlack,
             baseName: "cat_black",
             textureAtlasName: "CatBlack",
-            defaultSize: CGSize(width: 80, height: 80),
+            defaultSize: CGSize(width: 64, height: 64),
             walkSpeedRange: 40...40
         )
     }
@@ -83,9 +83,10 @@ final class CatBlackConfiguration: BasePetConfiguration {
             .daily(.idle),
             .daily(.walking),
             .daily(.walking),
+            .daily(.walking),
             .daily(.eating),
             .daily(.sitting),
-            .daily(.sleeping)
+            .daily(.sleeping),
         ]
     }
     
@@ -93,9 +94,9 @@ final class CatBlackConfiguration: BasePetConfiguration {
         switch state {
         case .daily(let s):
             switch s {
-            case .idle:     return 5...8
+            case .idle:     return 3...5
             case .walking:  return 30...50
-            case .sitting:  return 8...12
+            case .sitting:  return 5...8
             case .sleeping: return 50...80
             case .eating:   return 8...15
             }
