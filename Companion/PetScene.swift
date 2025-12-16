@@ -21,6 +21,7 @@ class PetScene: SKScene {
     var focusTimer: Timer?
     var focusEndTime: Date?
     var isFocusing: Bool = false
+    private var lastInteractionCheckTime: TimeInterval = 0
     
     // MARK: - 生命周期
     
@@ -43,7 +44,12 @@ class PetScene: SKScene {
             pet.update(deltaTime: deltaTime)
         }
         
-        updateWindowInteraction()
+        // 2. 【核心优化】限制鼠标检测频率
+        // 每 0.1 秒检测一次即可 (即 10 FPS)
+        if currentTime - lastInteractionCheckTime > 0.1 {
+            updateWindowInteraction()
+            lastInteractionCheckTime = currentTime
+        }
         checkHourlyChime() // 定义在 +Services
     }
     

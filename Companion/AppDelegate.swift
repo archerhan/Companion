@@ -25,7 +25,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let window = NSApplication.shared.windows.first {
             window.styleMask = .borderless
             window.isOpaque = false
-            window.backgroundColor = .clear
+            // 确保不开启阴影（透明窗口的阴影计算非常耗费 CPU）
+            window.hasShadow = false
+            // 确保背景色是纯透明，而不是半透明
+            window.backgroundColor = NSColor.clear
             window.level = .statusBar
             window.acceptsMouseMovedEvents = true
             if let screen = NSScreen.main {

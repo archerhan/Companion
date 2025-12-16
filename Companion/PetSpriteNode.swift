@@ -68,7 +68,7 @@ class PetSpriteNode: SKSpriteNode {
     @discardableResult
     func trySwitchState(to newState: PetState, force: Bool = false) -> Bool {
         // 1. 相同状态不处理
-        if currentState == newState { return true }
+        if currentState == newState && !force { return true }
         
         // 2. 优先级检查
         if !force && newState.priority < currentState.priority {
@@ -94,19 +94,33 @@ class PetSpriteNode: SKSpriteNode {
     
     // MARK: - 主循环
     func update(deltaTime: TimeInterval) {
-        // 1. 物理更新 (在 +Physics.swift)
-        // 只有在“非 Environment”状态下，才允许执行“走向专注点”的逻辑
-        let isEnvironment = (currentState.priority == 80)
-        
-        if isWalkingToFocusLocation && !isEnvironment {
-            updateWalkingToFocus(deltaTime: deltaTime)
-        } else {
-            updatePhysics(deltaTime: deltaTime)
+        // 1. 物理更新
+        // 【优化】: 只有在需要动的时候才计算物理
+        // 如果是 idle, sitting, sleeping, eating，物理层其实是完全静止的
+        // 可以直接跳过 updatePhysics 的 switch 判断开销
+        switch currentState {
+        case .daily(.idle), .daily(.sitting), .daily(.sleeping), .daily(.eating):
+            // 静态状态：什么都不做，跳过物理计算
+            break
+        case .interrupt:
+             // 喝水/报时：通常也是原地不动的
+            break
+        case .system(.focusMode):
+            // 专注模式：也是静止的
+            break
+        default:
+            // 只有 Walking, Falling, BlownByWind 等状态才需要跑物理逻辑
+            // 【注意】如果你把 walkingToFocus 放在 update 里，这里要注意逻辑包含
+             if isWalkingToFocusLocation {
+                 updateWalkingToFocus(deltaTime: deltaTime)
+             } else {
+                 updatePhysics(deltaTime: deltaTime)
+             }
         }
         
-        // 2. AI 更新 (在 +Brain.swift)
-        if isWalkingToFocusLocation || currentState == .system(.focusMode) || isEnvironment {
-            // 专注路上、专注中、被风吹中，都不执行随机 AI
+        // 2. AI 更新
+        // ... AI 逻辑通常只是减法运算，开销很小，可以保留 ...
+        if isWalkingToFocusLocation || currentState == .system(.focusMode) || (currentState.priority == 80) {
         } else {
             updateAI(deltaTime: deltaTime)
         }
