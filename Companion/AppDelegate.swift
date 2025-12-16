@@ -26,7 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.styleMask = .borderless
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.level = .floating
+            window.level = .statusBar
             window.acceptsMouseMovedEvents = true
             if let screen = NSScreen.main {
                 window.setFrame(screen.frame, display: true, animate: false)

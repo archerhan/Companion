@@ -73,9 +73,39 @@ final class CatBlackConfiguration: BasePetConfiguration {
             petType: .catBlack,
             baseName: "cat_black",
             textureAtlasName: "CatBlack",
-            defaultSize: CGSize(width: 64, height: 64),
-            walkSpeedRange: 30...50
+            defaultSize: CGSize(width: 80, height: 80),
+            walkSpeedRange: 40...40
         )
+    }
+    
+    override var capableRandomStates: [PetState] {
+        return [
+            .daily(.idle),
+            .daily(.walking),
+            .daily(.walking),
+            .daily(.eating),
+            .daily(.sitting),
+            .daily(.sleeping)
+        ]
+    }
+    
+    override func durationRange(for state: PetState) -> ClosedRange<TimeInterval> {
+        switch state {
+        case .daily(let s):
+            switch s {
+            case .idle:     return 5...8
+            case .walking:  return 30...50
+            case .sitting:  return 8...12
+            case .sleeping: return 50...80
+            case .eating:   return 8...15
+            }
+        case .play: return 3...5
+        case .system(.focusMode): return 1500...1500
+        case .system: return 5...10
+        case .environment: return 1000...1000 // 无限长，由物理逻辑控制
+        case .interrupt(.waterReminder): return 10...10 // 10秒提醒
+        case .interrupt(.hourlyChime): return 10...10
+        }
     }
 }
 

@@ -141,19 +141,13 @@ class PetScene: SKScene {
         lastDragLocation = location
         lastDragTime = ProcessInfo.processInfo.systemUptime
         pet.startDrag()
-        pet.run(SKAction.scale(to: 1.1, duration: 0.1))
     }
     
     private func endDrag(pet: PetSpriteNode, velocity: CGPoint) {
         draggedPet = nil
         lastDragLocation = nil
         dragOffset = .zero
-        
-        let currentSign = pet.xScale > 0 ? 1.0 : -1.0
         pet.endDrag(velocity: velocity)
-        
-        let restoreScale = SKAction.scaleX(to: 1.0 * currentSign, y: 1.0, duration: 0.1)
-        pet.run(restoreScale)
     }
     
     private func updateWindowInteraction() {
