@@ -182,7 +182,8 @@ class PetScene: SKScene {
         let location = event.location(in: self)
         for pet in pets {
             if pet.contains(location) {
-                if case .system(.focusMode) = pet.currentState {
+                // 只要宠物当前状态允许交互，就可以打开右键菜单
+                if pet.currentState.canInteract {
                     showFocusMenu(for: pet, event: event)
                     return
                 }

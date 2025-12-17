@@ -29,6 +29,7 @@ extension PetSpriteNode {
     // MARK: - 状态进入响应 (The Brain Reaction)
     
     func handleStateEnter(_ state: PetState) {
+        print("\n🐱宠物进入:\(state)状态\n前一个状态是:\(previousState)\n")
         // 1. 播放动画
         playAnimation(state.animation, loop: state.isLooping)
         
@@ -101,13 +102,16 @@ extension PetSpriteNode {
         }
         
         // 5. 落地后自动专注检测
-        if isPomodoroActive, case .daily = state {
+        // 【修复】增加 !isWalkingToFocusLocation 判断
+        // 防止：正在走向专注点时(Walking)，又触发了这里的定时器，导致无限递归调用 startFocusMode
+        if isPomodoroActive, case .daily = state, !isWalkingToFocusLocation {
             let wait = SKAction.wait(forDuration: 1.0)
             let goFocus = SKAction.run { [weak self] in
                 guard let self = self, self.isPomodoroActive else { return }
                 self.startFocusMode()
             }
-            run(SKAction.sequence([wait, goFocus]))
+            // 给这个动作加个 Key，防止重复叠加
+            run(SKAction.sequence([wait, goFocus]), withKey: "RefocusTimer")
         }
     }
     
@@ -149,7 +153,7 @@ extension PetSpriteNode {
         isWalkingToFocusLocation = false
         focusTargetLocation = nil
         trySwitchState(to: .daily(.idle), force: true)
-        bubbleNode.show(text: "完成啦！🎉", at: CGPoint(x: 0, y: size.height/2 + 15))
+        bubbleNode.show(text: "bubble_focus_done".localized, at: CGPoint(x: 0, y: size.height/2 + 15))
     }
     
     func tryRescue() -> Bool {

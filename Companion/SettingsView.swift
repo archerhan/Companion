@@ -17,43 +17,43 @@ struct SettingsView: View {
     
     var body: some View {
         Form {
-            Section(header: Text("基础设置").font(.title)) {
-                Toggle("开启音效", isOn: $enableSound)
+            Section(header: Text("settings_title").font(.title)) {
+                Toggle("settings_enable_sound", isOn: $enableSound)
                     .toggleStyle(SwitchToggleStyle())
             }
             Divider().padding(.vertical, 10)
-            Section(header: Text("生活提醒").font(.title)) {
+            Section(header: Text("settings_reminder_title").font(.title)) {
                 // 1. 喝水提醒开关
-                Toggle("开启喝水提醒", isOn: $enableWaterReminder)
+                Toggle("settings_enable_water", isOn: $enableWaterReminder)
                     .toggleStyle(SwitchToggleStyle())
                 
                 // 间隔选择 (如果开关关闭，则禁用此项，视觉上变灰)
-                Picker("喝水提醒间隔", selection: $waterInterval) {
-                    Text("15 分钟").tag(900.0)
-                    Text("30 分钟").tag(1800.0)
-                    Text("45 分钟").tag(2700.0)
-                    Text("60 分钟").tag(3600.0)
+                Picker("settings_water_interval", selection: $waterInterval) {
+                    Text("time_min_15").tag(900.0)
+                    Text("time_min_30").tag(1800.0)
+                    Text("time_min_45").tag(2700.0)
+                    Text("time_min_60").tag(3600.0)
                 }
                 .pickerStyle(MenuPickerStyle())
                 .disabled(!enableWaterReminder) // 【优化】
                 
                 // 2. 整点报时开关
-                Toggle("开启整点报时", isOn: $enableHourlyChime)
+                Toggle("settings_enable_chime", isOn: $enableHourlyChime)
                     .toggleStyle(SwitchToggleStyle())
             }
             Divider().padding(.vertical, 10)
-            Section(header: Text("专注模式").font(.title)) {
-                Picker("番茄钟时长", selection: $pomodoroDuration) {
-                    Text("15 分钟").tag(15.0)
-                    Text("25 分钟").tag(25.0)
-                    Text("30 分钟").tag(30.0)
-                    Text("45 分钟").tag(45.0)
-                    Text("60 分钟").tag(60.0)
+            Section(header: Text("settings_focus_title").font(.title)) {
+                Picker("settings_pomodoro_duration", selection: $pomodoroDuration) {
+                    Text("time_min_15").tag(15.0)
+                    Text("time_min_25").tag(25.0)
+                    Text("time_min_30").tag(30.0)
+                    Text("time_min_45").tag(45.0)
+                    Text("time_min_60").tag(60.0)
                 }
                 .pickerStyle(MenuPickerStyle())
             }
             Spacer()
-            Text("设置将即时自动保存")
+            Text("settings_footer")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .trailing)

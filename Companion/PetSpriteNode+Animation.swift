@@ -85,17 +85,23 @@ extension PetSpriteNode {
     func showTimeBubble() {
         let hour = Calendar.current.component(.hour, from: Date())
         let text: String
-        if hour == 0 { text = "午夜啦！睡觉觉！💤" }
-        else if hour < 6 { text = "呼呼... \(hour)点..." }
-        else if hour == 12 { text = "12点！干饭！🍖" }
-        else { text = "现在是 \(hour) 点整 🕛" }
+        if hour == 0 {
+            text = "bubble_midnight".localized
+        } else if hour < 6 {
+            text = "bubble_early_morning".localized(with: hour)
+        } else if hour == 12 {
+            text = "bubble_noon".localized
+        } else {
+            text = "bubble_hourly_format".localized(with: hour)
+        }
         
         bubbleNode.show(text: text, at: CGPoint(x: 0, y: size.height/2 + 15))
     }
     
     func showWaterBubble() {
-        let texts = ["该喝水啦！🥤", "补充水分时间！💧", "咕嘟咕嘟...🚰", "健康第一，喝水！🥛"]
-        bubbleNode.show(text: texts.randomElement() ?? "喝水啦！", at: CGPoint(x: 0, y: size.height/2 + 15))
+        let keys = ["bubble_water_1", "bubble_water_2", "bubble_water_3", "bubble_water_4"]
+        let randomKey = keys.randomElement() ?? "bubble_water_1"
+        bubbleNode.show(text: randomKey.localized, at: CGPoint(x: 0, y: size.height/2 + 15))
     }
     
     func updateFocusTimerBubble(text: String) {

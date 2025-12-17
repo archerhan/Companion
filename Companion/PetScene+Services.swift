@@ -135,24 +135,52 @@ extension PetScene {
     func showFocusMenu(for pet: PetSpriteNode, event: NSEvent) {
         let menu = NSMenu(title: "Pet Menu")
         
-        if let endTime = focusEndTime {
-            let remaining = endTime.timeIntervalSinceNow
-            let minutes = Int(remaining) / 60
-            let title = remaining > 0 ? "专注中... (剩余 \(minutes)分钟)" : "专注中..."
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
+        // ─── 分支 A: 正在专注模式中 ───
+        if isFocusing {
+            // 1. 显示剩余时间 (不可点击)
+            if let endTime = focusEndTime {
+                let remaining = endTime.timeIntervalSinceNow
+                let minutes = Int(remaining) / 60
+                // 优化文案显示
+                let title = remaining > 0
+                    ? "menu_focus_active_format".localized(with: minutes)
+                    : "menu_focus_ending".localized
+                let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                item.isEnabled = false // 仅展示，不可点
+                menu.addItem(item)
+            }
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // 2. 结束专注选项
+            let stopItem = NSMenuItem(title: "menu_focus_stop".localized, action: #selector(stopFocusFromMenu), keyEquivalent: "")
+            stopItem.target = self
+            stopItem.representedObject = pet
+            menu.addItem(stopItem)
+            
         }
-        menu.addItem(NSMenuItem.separator())
+        // ─── 分支 B: 未在专注模式 (新增功能) ───
+        else {
+            // 动态获取当前设置的时长，让菜单文字更准确
+            let duration = Int(AppConfig.pomodoroDuration)
+            let startItem = NSMenuItem(title: "menu_focus_start_format".localized(with: duration), action: #selector(startFocusFromMenu(_:)), keyEquivalent: "")
+            startItem.target = self
+            startItem.representedObject = pet
+            menu.addItem(startItem)
+        }
         
-        let stopItem = NSMenuItem(title: "结束专注", action: #selector(stopFocusFromMenu), keyEquivalent: "")
-        stopItem.target = self
-        stopItem.representedObject = pet
-        menu.addItem(stopItem)
-        
+        // 弹出菜单
         NSMenu.popUpContextMenu(menu, with: event, for: self.view!)
     }
     
+    // MARK: - 菜单响应动作
+        
+    @objc private func startFocusFromMenu(_ sender: NSMenuItem) {
+        // 直接读取配置中的时长启动
+        startPomodoro(durationMinutes: AppConfig.pomodoroDuration)
+    }
+    
+    // (原有的 stopFocusFromMenu 保持不变)
     @objc private func stopFocusFromMenu(_ sender: NSMenuItem) {
         stopPomodoro()
     }

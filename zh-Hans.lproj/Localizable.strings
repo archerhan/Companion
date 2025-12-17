@@ -5,5 +5,46 @@
   Created by it on 2025/12/13.
   
 */
-"CFBundleDisplayName" = "Cozy Pals";
-"common_exit" = "退出应用";
+/* 菜单 */
+"menu_settings" = "偏好设置...";
+"menu_quit" = "退出";
+"menu_test_chime" = "测试: 整点报时";
+"menu_test_water" = "测试: 喝水提醒";
+"menu_test_wind" = "测试: 被风吹起";
+"menu_focus_start_format" = "开始专注 (%lld分钟)"; // 带参数
+"menu_focus_active_format" = "专注中... (剩 %d 分钟)";
+"menu_focus_ending" = "专注即将结束...";
+"menu_focus_stop" = "结束专注";
+
+/* 气泡 - 时间 */
+"bubble_midnight" = "午夜啦！睡觉觉！💤";
+"bubble_early_morning" = "呼呼... %d点...";
+"bubble_noon" = "12点！干饭！🍖";
+"bubble_hourly_format" = "现在是 %d 点整 🕛";
+
+/* 气泡 - 喝水 (为了简单，这里取几个固定的) */
+"bubble_water_1" = "该喝水啦！🥤";
+"bubble_water_2" = "补充水分时间！💧";
+"bubble_water_3" = "咕嘟咕嘟...🚰";
+"bubble_water_4" = "健康第一，喝水！🥛";
+
+/* 气泡 - 专注 */
+"bubble_focus_done" = "完成啦！🎉";
+
+/* 设置界面 */
+"settings_title" = "基础设置";
+"settings_enable_sound" = "开启音效";
+"settings_reminder_title" = "生活提醒";
+"settings_enable_water" = "开启喝水提醒";
+"settings_water_interval" = "喝水提醒间隔";
+"settings_enable_chime" = "开启整点报时";
+"settings_focus_title" = "专注模式";
+"settings_pomodoro_duration" = "番茄钟时长";
+"settings_footer" = "设置将即时自动保存";
+
+/* 时间通用 */
+"time_min_15" = "15 分钟";
+"time_min_25" = "25 分钟";
+"time_min_30" = "30 分钟";
+"time_min_45" = "45 分钟";
+"time_min_60" = "60 分钟";

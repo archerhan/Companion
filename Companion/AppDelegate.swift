@@ -51,22 +51,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         
         // 添加设置入口
-        menu.addItem(NSMenuItem(title: "偏好设置...", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "menu_settings".localized, action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         
-        menu.addItem(NSMenuItem(title: "测试: 整点报时", action: #selector(timeCheme), keyEquivalent: "t"))
+        menu.addItem(NSMenuItem(title: "menu_test_chime".localized, action: #selector(timeCheme), keyEquivalent: "t"))
         statusItem?.menu = menu
         
-        menu.addItem(NSMenuItem(title: "测试: 喝水提醒", action: #selector(testWater), keyEquivalent: "d"))
+        menu.addItem(NSMenuItem(title: "menu_test_water".localized, action: #selector(testWater), keyEquivalent: "d"))
         statusItem?.menu = menu
         
-        menu.addItem(NSMenuItem(title: "测试: 被风吹起", action: #selector(testWind), keyEquivalent: "w"))
+        menu.addItem(NSMenuItem(title: "menu_test_wind".localized, action: #selector(testWind), keyEquivalent: "w"))
         statusItem?.menu = menu
         
-        menu.addItem(NSMenuItem(title: "开始专注 (25分钟)", action: #selector(startFocus), keyEquivalent: "f"))
+        let duration = Int(AppConfig.pomodoroDuration)
+        let defaultFocusTitle = "menu_focus_start_format".localized(with: duration)
+        menu.addItem(NSMenuItem(title: defaultFocusTitle, action: #selector(startFocus), keyEquivalent: "f"))
         menu.addItem(NSMenuItem.separator())
         
-        menu.addItem(NSMenuItem(title: NSLocalizedString("common_exit", comment: "退出登录"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "menu_quit".localized, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem?.menu = menu
     }
     

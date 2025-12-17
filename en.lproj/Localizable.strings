@@ -5,5 +5,46 @@
   Created by it on 2025/12/13.
   
 */
-"CFBundleDisplayName" = "Cozy Pals";
-"common_exit" = "Exit";
+/* Menu */
+"menu_settings" = "Preferences...";
+"menu_quit" = "Quit";
+"menu_test_chime" = "Test: Hourly Chime";
+"menu_test_water" = "Test: Water Reminder";
+"menu_test_wind" = "Test: Windy";
+"menu_focus_start_format" = "Start Focus (%lld min)";
+"menu_focus_active_format" = "Focusing... (%d min left)";
+"menu_focus_ending" = "Focus ending...";
+"menu_focus_stop" = "Stop Focus";
+
+/* Bubble - Time */
+"bubble_midnight" = "Midnight! Sleep time! 💤";
+"bubble_early_morning" = "Zzz... %d o'clock...";
+"bubble_noon" = "12 PM! Lunch time! 🍖";
+"bubble_hourly_format" = "It's %d o'clock 🕛";
+
+/* Bubble - Water */
+"bubble_water_1" = "Time to drink water! 🥤";
+"bubble_water_2" = "Hydration time! 💧";
+"bubble_water_3" = "Gulp gulp... 🚰";
+"bubble_water_4" = "Health first, drink! 🥛";
+
+/* Bubble - Focus */
+"bubble_focus_done" = "Done! 🎉";
+
+/* Settings UI */
+"settings_title" = "Basic Settings";
+"settings_enable_sound" = "Enable Sound";
+"settings_reminder_title" = "Reminders";
+"settings_enable_water" = "Water Reminder";
+"settings_water_interval" = "Water Interval";
+"settings_enable_chime" = "Hourly Chime";
+"settings_focus_title" = "Focus Mode";
+"settings_pomodoro_duration" = "Pomodoro Duration";
+"settings_footer" = "Settings are saved automatically";
+
+/* Time Common */
+"time_min_15" = "15 Minutes";
+"time_min_25" = "25 Minutes";
+"time_min_30" = "30 Minutes";
+"time_min_45" = "45 Minutes";
+"time_min_60" = "60 Minutes";
