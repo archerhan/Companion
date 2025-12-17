@@ -1,3 +1,9 @@
+//
+//  PetSpriteNode.swift
+//  Companion
+//
+//  Created by it on 2025/12/15.
+//
 import SpriteKit
 import Cocoa
 

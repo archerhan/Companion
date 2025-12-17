@@ -1,7 +1,8 @@
-
 //
 //  ViewController.swift
 //  Companion
+//
+//  Created by it on 2025/12/17.
 //
 
 import Cocoa

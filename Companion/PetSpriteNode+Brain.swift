@@ -52,7 +52,13 @@ extension PetSpriteNode {
         // 3. 气泡与 UI
         if case .interrupt(.hourlyChime) = state { showTimeBubble() }
         else if case .interrupt(.waterReminder) = state { showWaterBubble() }
-        else { bubbleNode.hide() }
+        else {
+            // 【修复】只有在"不是"前往专注地点的路上时，才隐藏气泡
+            // 否则会把专注倒计时给隐藏掉，导致闪烁
+            if !isWalkingToFocusLocation {
+                bubbleNode.hide()
+            }
+        }
         
         // 4. 定时器与自动退出逻辑
         let range = configuration.durationRange(for: state)
@@ -149,6 +155,11 @@ extension PetSpriteNode {
     func tryRescue() -> Bool {
         if case .environment(.stuckOnEdge) = currentState {
             trySwitchState(to: .environment(.falling), force: true)
+            // 【修改】检查音效
+            if AppConfig.enableSound {
+               // 播放一个解救成功的音效，比如 pop 声
+                NSSound(named: "Pop")?.play()
+            }
             return true
         }
         return false

@@ -1,3 +1,9 @@
+//
+//  PetState.swift
+//  Companion
+//
+//  Created by it on 2025/12/15.
+//
 import Foundation
 
 // MARK: - 状态定义

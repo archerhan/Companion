@@ -1,3 +1,9 @@
+//
+//  BubbleNode.swift
+//  Companion
+//
+//  Created by it on 2025/12/6.
+//
 import SpriteKit
 
 class BubbleNode: SKNode {
@@ -53,6 +59,11 @@ class BubbleNode: SKNode {
     }
     
     func updateText(_ text: String) {
+        // 【修复】先移除所有之前的动画（例如 fadeOut），
+        // 防止之前的 hide() 动画还在运行中覆盖了 alpha 属性，或者 completion block 导致再次隐藏。
+        self.removeAllActions()
+        contentNode.removeAllActions()
+        
         updateBackground(text: text)
         self.isHidden = false
         self.alpha = 1.0

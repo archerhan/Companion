@@ -13,8 +13,19 @@ extension PetScene {
     
     // MARK: - 喝水提醒服务
     func startWaterReminderTimer() {
-        // 2700秒 = 45分钟
-        waterTimer = Timer.scheduledTimer(withTimeInterval: 2700, repeats: true) { [weak self] _ in
+        waterTimer?.invalidate()
+        
+        // 【新增】双重检查：如果配置是关闭的，直接不启动
+        if !AppConfig.enableWaterReminder {
+            print("🚫 喝水提醒已关闭，定时器不启动")
+            return
+        }
+        
+        let interval = AppConfig.waterInterval
+        self.currentWaterInterval = interval
+        print("💧 喝水提醒已启动，间隔: \(interval)秒")
+        
+        waterTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.triggerWaterReminder()
         }
     }
@@ -31,6 +42,12 @@ extension PetScene {
     
     // MARK: - 整点报时服务
     func checkHourlyChime() {
+        
+        // 【新增】如果在 update 循环中检测到开关关闭，直接返回
+        // 这里使用缓存变量 isHourlyChimeEnabled 以提高性能 (每帧读取内存比读取 UserDefaults 快)
+        if !isHourlyChimeEnabled { return }
+
+        
         let date = Date()
         let calendar = Calendar.current
         let components = calendar.dateComponents([.hour, .minute], from: date)
@@ -53,7 +70,7 @@ extension PetScene {
     
     // MARK: - 番茄钟服务
     
-    func startPomodoro(durationMinutes: Double = 25) {
+    func startPomodoro(durationMinutes: Double = AppConfig.pomodoroDuration) {
         if isFocusing {
             print("⚠️ 已经在专注状态中，忽略本次请求")
             return
@@ -81,7 +98,10 @@ extension PetScene {
         
         if remaining <= 0 {
             stopPomodoro()
-            NSSound(named: "Glass")?.play()
+            // 【修改】检查音效配置
+            if AppConfig.enableSound {
+                NSSound(named: "Glass")?.play()
+            }
             return
         }
         
